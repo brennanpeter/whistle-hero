@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { detect, analyze, annotate, DEFAULT_SETTINGS, WIN } from "../src/audio/detector.js";
 import { matchTruth } from "../src/audio/score.js";
+import { renderAbc } from "../src/sim/whistle-synth.js";
 import { noteInfo, LOW_D, FINGERINGS } from "../src/whistle.js";
 
 const SR = 44100;
@@ -66,4 +67,65 @@ test("matchTruth pairs notes by pitch and onset", () => {
 
 test("fingering table covers the D scale and C natural", () => {
   assert.deepEqual(Object.keys(FINGERINGS).map(Number), [0, 2, 4, 5, 7, 9, 10, 11]);
+});
+
+// ---------- Phase 1 behaviour ----------
+const concat = (...parts) => { const out = new Float32Array(parts.reduce((a, p) => a + p.length, 0)); let o = 0; for (const p of parts) { out.set(p, o); o += p.length; } return out; };
+const glide = (m0, m1, secs, amp = 0.3) => { let ph = 0; return Float32Array.from({ length: Math.round(secs * SR) }, (_, i) => { ph += 2 * Math.PI * hz(m0 + (m1 - m0) * i / (secs * SR)) / SR; return amp * Math.sin(ph); }); };
+const ABC = b => `X:1\nT:t\nM:4/4\nL:1/8\nK:D\n${b}`;
+const heard = S => S.segs.filter(s => !s.art);
+
+test("a 30 ms cut between two notes of the same pitch is heard", () => {
+  const S = analyze(concat(sine(hz(79), 0.25), sine(hz(83), 0.03), sine(hz(79), 0.25)), SR);
+  const h = heard(S);
+  assert.deepEqual(h.map(s => s.midi), [79, 83, 79]);
+  assert.equal(h[1].orn, "cut");
+});
+
+test("a slide is folded into the note it lands on", () => {
+  const S = analyze(concat(new Float32Array(SR / 10), glide(81.4, 83, 0.12), sine(hz(83), 0.4)), SR);
+  const h = heard(S);
+  assert.equal(h.length, 1, h.map(s => s.midi).join(","));
+  assert.equal(h[0].midi, 83);
+  assert.equal(h[0].slide, true);
+  assert.ok(h[0].start < 0.13, `slide start ${h[0].start}`);
+});
+
+test("an ordinary step between notes is not a slide", () => {
+  const S = analyze(concat(sine(hz(81), 0.2), sine(hz(83), 0.2), sine(hz(85), 0.2)), SR);
+  assert.deepEqual(heard(S).map(s => [s.midi, !!s.slide]), [[81, false], [83, false], [85, false]]);
+});
+
+test("simulated slides are found and nothing else is called a slide", () => {
+  const r = renderAbc(ABC("(DEFG A2)|!slide!B4 A2|(BAGF) !slide!A2|(d2 B2 A2)|D6|]"), { profile: "typical" });
+  const S = analyze(r.samples, r.sr);
+  assert.deepEqual(heard(S).filter(s => s.slide).map(s => s.midi), [83, 81]);
+});
+
+test("tongued repeats are split even when the echo fills the gap", () => {
+  const r = renderAbc(ABC("AAA BBB|AAA d3|]"), { profile: "clean", reverb: 0.2 });
+  const S = analyze(r.samples, r.sr);
+  assert.equal(heard(S).filter(s => s.midi === 81).length, 6);
+});
+
+test("a slow fade in a held note does not split it", () => {
+  const n = Math.round(0.6 * SR);
+  const fade = Float32Array.from({ length: n }, (_, i) => 0.3 * Math.pow(10, -8 * i / n / 20) * Math.sin(2 * Math.PI * hz(81) * i / SR));
+  assert.equal(heard(analyze(fade, SR)).length, 1);
+});
+
+test("annotate: glides and flat attacks are transients, cuts are not", () => {
+  const seg = (midi, start, dur) => ({ midi, start, end: start + dur, dur, cents: 0 });
+  const step = [seg(76, 0, 0.2), seg(77, 0.2, 0.02), seg(78, 0.22, 0.2)];   // E, F (passing), F♯
+  annotate(step);
+  assert.equal(step[1].art, "glide");
+  const scoop = [seg(80, 0, 0.02), seg(81, 0.02, 0.3)];                       // G♯ then A, from silence
+  annotate(scoop);
+  assert.equal(scoop[0].art, "glide");
+  const cut = [seg(88, 0, 0.2), seg(91, 0.2, 0.03), seg(90, 0.23, 0.2)];     // E′, cut G′, F♯′
+  annotate(cut);
+  assert.equal(cut[1].art, null);
+  const near = [seg(78, 0, 0.2), seg(91, 0.2, 0.03), seg(81, 0.23, 0.2)];    // 13 semitones is not an overtone
+  annotate(near);
+  assert.equal(near[1].art, null);
 });

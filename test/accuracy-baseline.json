@@ -5,99 +5,99 @@
     "extra": 0
   },
   "scale/typical/abc": {
-    "notes": 0.923,
+    "notes": 1,
     "ornaments": null,
-    "extra": 3
+    "extra": 0
   },
   "scale/beginner/abc": {
-    "notes": 0.846,
+    "notes": 1,
     "ornaments": null,
-    "extra": 7
+    "extra": 1
   },
   "scale/noisy/abc": {
-    "notes": 0.615,
+    "notes": 0.962,
     "ornaments": null,
-    "extra": 27
+    "extra": 4
   },
   "ornaments/clean/abc": {
-    "notes": 0.957,
-    "ornaments": 0.786,
-    "extra": 2
+    "notes": 1,
+    "ornaments": 1,
+    "extra": 0
   },
   "ornaments/typical/abc": {
-    "notes": 0.913,
-    "ornaments": 0.643,
+    "notes": 1,
+    "ornaments": 0.929,
     "extra": 2
   },
   "ornaments/beginner/abc": {
-    "notes": 0.826,
-    "ornaments": 0.786,
-    "extra": 11
+    "notes": 1,
+    "ornaments": 0.857,
+    "extra": 6
   },
   "ornaments/noisy/abc": {
-    "notes": 0.652,
+    "notes": 0.783,
     "ornaments": 0.214,
-    "extra": 29
+    "extra": 23
   },
   "repeats/clean/abc": {
-    "notes": 0.95,
+    "notes": 1,
     "ornaments": null,
-    "extra": 1
+    "extra": 0
   },
   "repeats/typical/abc": {
-    "notes": 0.8,
+    "notes": 1,
     "ornaments": null,
-    "extra": 5
+    "extra": 0
   },
   "repeats/beginner/abc": {
-    "notes": 0.6,
+    "notes": 1,
     "ornaments": null,
-    "extra": 5
+    "extra": 0
   },
   "repeats/noisy/abc": {
-    "notes": 0.6,
+    "notes": 0.7,
     "ornaments": null,
-    "extra": 9
+    "extra": 5
   },
   "slurs/clean/abc": {
-    "notes": 0.875,
+    "notes": 1,
     "ornaments": null,
-    "extra": 5
-  },
-  "slurs/typical/abc": {
-    "notes": 0.875,
-    "ornaments": null,
-    "extra": 5
-  },
-  "slurs/beginner/abc": {
-    "notes": 0.625,
-    "ornaments": null,
-    "extra": 10
-  },
-  "slurs/noisy/abc": {
-    "notes": 0.5,
-    "ornaments": null,
-    "extra": 34
-  },
-  "reel/clean/abc": {
-    "notes": 0.984,
-    "ornaments": 1,
     "extra": 1
   },
+  "slurs/typical/abc": {
+    "notes": 1,
+    "ornaments": null,
+    "extra": 1
+  },
+  "slurs/beginner/abc": {
+    "notes": 1,
+    "ornaments": null,
+    "extra": 0
+  },
+  "slurs/noisy/abc": {
+    "notes": 0.625,
+    "ornaments": null,
+    "extra": 21
+  },
+  "reel/clean/abc": {
+    "notes": 1,
+    "ornaments": 1,
+    "extra": 0
+  },
   "reel/typical/abc": {
-    "notes": 0.897,
-    "ornaments": 0.75,
-    "extra": 18
+    "notes": 0.984,
+    "ornaments": 1,
+    "extra": 5
   },
   "reel/beginner/abc": {
-    "notes": 0.865,
+    "notes": 0.976,
     "ornaments": 1,
-    "extra": 26
+    "extra": 5
   },
   "reel/noisy/abc": {
-    "notes": 0.587,
+    "notes": 0.698,
     "ornaments": 0.25,
-    "extra": 102
+    "extra": 63
   },
   "repeats/clean/cuts": {
     "notes": 0.95,
@@ -107,16 +107,16 @@
   "repeats/typical/cuts": {
     "notes": 1,
     "ornaments": 0.923,
-    "extra": 1
+    "extra": 2
   },
   "reel/clean/cuts": {
-    "notes": 0.944,
-    "ornaments": 0.75,
-    "extra": 1
+    "notes": 0.968,
+    "ornaments": 0.85,
+    "extra": 0
   },
   "reel/typical/cuts": {
-    "notes": 0.929,
-    "ornaments": 0.65,
+    "notes": 0.96,
+    "ornaments": 0.85,
     "extra": 6
   }
 }

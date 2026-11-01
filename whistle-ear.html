@@ -575,17 +575,17 @@ function renderLog(){
     const n = document.createElement("span"); n.className = "n"; n.textContent = inf.name;
     const sm = document.createElement("small"); sm.textContent = Math.round(s.dur * 1000) + " ms";
     el.append(n, sm);
-    const tag = s.roll === 1 ? "roll" : s.orn || (s.kind === "grace" ? "grace" : s.tongued ? "tongued" : "");
+    const tag = s.roll === 1 ? "roll" : s.orn || (s.kind === "grace" ? "grace" : s.slide ? "slide" : s.tongued ? "tongued" : "");
     if (tag){ const em = document.createElement("em"); em.textContent = tag; el.append(em); }
     log.append(el);
   }
   if (mode === "live") log.scrollTop = log.scrollHeight;
-  const notes = segs.filter(s => s.kind === "note"), orn = segs.filter(s => s.kind === "grace" && !s.art);
-  const arts = segs.filter(s => s.art).length;
-  const rolls = segs.filter(s => s.roll === 1).length;
+  const notes = segs.filter(s => s.kind === "note" && !s.art), orn = segs.filter(s => s.kind === "grace" && !s.art);
+  const arts = segs.filter(s => s.art && s.art !== "slide").length;
+  const rolls = segs.filter(s => s.roll === 1).length, slides = notes.filter(s => s.slide).length;
   const cs = notes.map(s => s.cents).sort((a, b) => a - b);
   const med = cs.length ? cs[cs.length >> 1] : null;
-  $("#stats").textContent = `${notes.length} notes · ${orn.length} ornaments · ${rolls} roll${rolls === 1 ? "" : "s"} · ${arts} transient${arts === 1 ? "" : "s"} ignored` +
+  $("#stats").textContent = `${notes.length} notes · ${orn.length} ornaments · ${rolls} roll${rolls === 1 ? "" : "s"} · ${slides} slide${slides === 1 ? "" : "s"} · ${arts} transient${arts === 1 ? "" : "s"} ignored` +
     (med != null ? ` · median tuning ${med >= 0 ? "+" : "−"}${Math.abs(med).toFixed(0)} cents` : "");
   if (tm){
     const r = tm;

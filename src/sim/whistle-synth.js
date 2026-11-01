@@ -192,12 +192,17 @@ export function perform(parsed, opts) {
     it.cents = o.tuningCents + reg * 6 + (it.kind === "note" ? R.gauss() * o.pitchWobble : 0);
     it.amp = (reg ? 0.30 : 0.25) * Math.pow(10, R.gauss() * 1.2 / 20) * (it.kind === "tap" ? 0.75 : 1);
     it.tongueS = it.tongued ? Math.min(o.tongueMs / 1000, dur * 0.3) : 0;
+    // The tongue stops the air at the end of the previous note, so the new note still sounds on the beat.
+    if (it.tongueS && prev && prev.end > it.start - it.tongueS) {
+      it.tongueS = Math.min(it.tongueS, (prev.end - prev.start) * 0.3);
+      prev.end = it.start - it.tongueS;
+    }
     it.vib = it.kind === "note" && dur > 0.42 && o.vibratoCents > 0;
     it.blips = [];
 
     if (it.tongued && it.kind === "note" && !reg && dur > 0.1 && R.chance(o.overtoneProb)) {
       const up = R.chance(0.3) ? 19 : 12, len = R.range(0.010, 0.024);
-      const s = it.start + it.tongueS;
+      const s = it.start;
       it.blips.push({ midi: it.midi + up, start: s, end: s + len });
       artifacts.push({ kind: "overtone", midi: it.midi + up, start: s, end: s + len, note: k });
     }
@@ -264,7 +269,7 @@ export function renderPerformance(perf) {
       tAmp[n] = it.amp * (j < slideS ? 0.85 : 1);
       owner[n] = k;
     }
-    if (it.tongueS) { const e = S(it.start + it.tongueS); for (let n = s0; n < e; n++) { tAmp[n] = it.amp * 0.02; stop[n] = 1; } if (e < N) chiffAt[e] = 1; }
+    if (it.tongueS) { for (let n = S(it.start - it.tongueS); n < s0; n++) { tAmp[n] = it.amp * 0.02; stop[n] = 1; } if (s0 < N) chiffAt[s0] = 1; }
     for (const b of it.blips) for (let n = S(b.start); n < S(b.end); n++) tMidi[n] = b.midi + it.cents / 100;
     if (it.crack) for (let n = S(it.crack.start); n < S(it.crack.end); n++) tAmp[n] = it.amp * 0.15;
   });

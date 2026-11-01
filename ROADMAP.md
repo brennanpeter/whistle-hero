@@ -13,13 +13,17 @@ Rough order of work for Whistle Hero. Each phase leans on the one before it. Che
 
 ## Phase 1: Harden the detector
 
-The simulator already shows where it struggles. Clean playing scores 88–100% of notes matched; `npm run accuracy` prints the full table. Each fix here should raise those numbers, then `npm run accuracy -- --update` locks the gain in. The weak spots:
+`npm run accuracy` prints the full table. Each fix should raise those numbers; then `npm run accuracy -- --update` locks the gain in.
 
-- [ ] **Reverb tails.** In a live room, a note's echo keeps the pitch alive through rests and tongue gaps, so notes merge or run long. End notes on a falling energy envelope, not just silence.
-- [ ] **Slides.** A slide's glide registers as an extra, intermediate note. Recognize glides and report them as a slide into the target note.
-- [ ] **Cuts after tongued attacks.** These are sometimes missed. Tongued notes also currently land about 30 ms late against the beat because detection waits for the tone to come back after the gap.
-- [ ] **Overblown attacks.** A blip up an octave or a twelfth at the start of a note isn't always filtered.
-- [ ] **Finger-crossing blips.** A stray in-between note during a multi-finger change can be read as a grace note.
+**Where it stands:** clean, typical and beginner players score 95–100% of notes and 85–100% of cuts and taps. Before Phase 1, typical playing scored 80–100% of notes and 64–92% of ornaments (partly because of a simulator flaw, fixed below). The noisy pub (a mic a couple of metres away in a live room) is still at 63–96% of notes and about 20–25% of ornaments.
+
+- [x] **Tongued notes on the beat.** This was a simulator bug: it put the tongue gap at the start of each note, so every tongued note sounded 30 ms late. The gap now shortens the previous note, as a real tongue stop does.
+- [x] **Tongued repeats in a live room.** A re-articulation is now a fast dip below the recent level followed by a 6 dB recovery. Before, any dip below 45% of the note's loudest point counted, so the slow swells of a room's echo split held notes. Repeats now score 100% for typical and beginner players.
+- [x] **Slides.** A slide's glide registered as an extra in-between note. The detector now folds a continuously rising glide into the note it lands on, marks that note `slide`, and starts it where the slide began. The glide must last at least 45 ms, so ordinary note changes aren't mistaken for slides.
+- [x] **Short cuts and taps.** At about 30 ms they leave only one or two clean frames in the 23 ms analysis window, but a new pitch needed three frames. Two clearly pitched, steady frames now count as an ornament.
+- [x] **Overblown attacks.** The filter accepted anything within a semitone of an octave or a twelfth, which threw away real cuts. It now requires an exact match.
+- [x] **Glides and finger-crossing blips.** A short piece between two notes and within a semitone of both (or off the D scale) is filtered as a transient. So is a flat-starting attack or a release that sags flat. Cuts sit above the note and taps sit between two copies of the same note, so neither matches.
+- [ ] **Echo-heavy rooms.** When the echo is within about 5 dB of the direct sound, the previous note's echo and the new note blur inside one analysis window. The pitch reads off by a semitone, or the frame isn't clear enough to count. A fix needs a different approach, such as subtracting the previous note's harmonics after each onset, or a shorter second-pass window around onsets to get ornament pitches. A close mic is the practical answer for now.
 - [ ] **Latency calibration.** Measure the delay from microphone to detection (play a click and listen for it, or have the player tap along) and store the offset. The game's timing judgment depends on it.
 - [ ] **Adaptive noise gate.** Measure room noise for a second before playing.
 - [ ] **Whistle tuning calibration.** Detect each whistle's offset from a held low D, rather than relying on the reference-pitch slider.
