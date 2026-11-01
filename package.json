@@ -6,9 +6,11 @@
   "type": "module",
   "scripts": {
     "dev": "node tools/serve.mjs",
+    "test": "node --test",
+    "accuracy": "node tools/accuracy.mjs",
     "render": "node tools/render.mjs"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   }
 }

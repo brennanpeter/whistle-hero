@@ -1,6 +1,9 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light}body{margin:0;font:14px system-ui,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style></head><body>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Whistle Ear</title>
-<meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;800&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
@@ -24,7 +27,9 @@
   --trace-bg:#121916; color-scheme:dark }
 
 *{box-sizing:border-box}
-body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.5;
+[hidden]{display:none!important}
+img{max-width:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.5;
   padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 40px}
 .wrap{max-width:1180px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
 h1,h2{margin:0;text-wrap:balance}
@@ -108,7 +113,8 @@ h2{font:600 15px var(--f-body)}
 @media (max-width:520px){.brand h1{font-size:36px}.note{font-size:92px}canvas#trace{height:320px}}
 @media (prefers-reduced-motion:reduce){.meter .needle{transition:none}}
 </style>
-
+</head>
+<body>
 <div class="wrap">
   <header class="top">
     <div class="brand">
@@ -180,147 +186,19 @@ h2{font:600 15px var(--f-body)}
   <p class="foot">McLeod pitch method · 1024-sample window · 256-sample hop (≈5 ms) · D5–D7 range · onsets from amplitude dips</p>
 </div>
 
-<script>
+<script type="module">
+import { LOW, WIN, HOP, M_TOP, M_BOT, DEFAULT_SETTINGS, makeSession as newSession, feed, closeSeg, annotate as annotateSegs } from "./src/audio/detector.js";
+import { matchTruth } from "./src/audio/score.js";
+import { noteInfo } from "./src/whistle.js";
 (() => {
 const $ = s => document.querySelector(s);
-const LOW = 74, FMIN = 480, FMAX = 2700, WIN = 1024, HOP = 256;
-const M_TOP = 98.6, M_BOT = 73.4;
-const SCALE = {0:"D",2:"E",4:"F♯",5:"G",7:"A",9:"B",10:"C♮",11:"C♯"};
-const CHROM = ["D","D♯","E","F","F♯","G","G♯","A","A♯","B","C","C♯"];
-const FING = {0:[1,1,1,1,1,1],2:[1,1,1,1,1,0],4:[1,1,1,1,0,0],5:[1,1,1,0,0,0],7:[1,1,0,0,0,0],9:[1,0,0,0,0,0],10:[0,1,1,0,0,0],11:[0,0,0,0,0,0]};
 
-const settings = {a4:440, gate:-50, clarity:0.88, grace:70};
+const settings = {...DEFAULT_SETTINGS};
 try { Object.assign(settings, JSON.parse(localStorage.getItem("whistle-ear-settings") || "{}")); } catch (e) {}
 const saveSettings = () => { try { localStorage.setItem("whistle-ear-settings", JSON.stringify(settings)); } catch (e) {} };
-
-function noteInfo(midi){
-  const off = midi - LOW, oct = Math.floor(off / 12), pc = ((off % 12) + 12) % 12;
-  const inScale = (pc in SCALE) && oct >= 0 && oct <= 2;
-  let name = pc in SCALE ? SCALE[pc] : CHROM[pc];
-  if (oct === 1) name += "′"; else if (oct === 2) name += "″"; else if (oct < 0) name += ",";
-  return {name, inScale, fing: FING[pc] || null, oct, pc};
-}
-
-/* ---------- Pitch detection: McLeod Pitch Method (normalized square difference) ---------- */
-const nsdf = new Float32Array(WIN);
-function detect(buf, sr){
-  const n = buf.length; let e = 0;
-  for (let i = 0; i < n; i++) e += buf[i] * buf[i];
-  const rms = Math.sqrt(e / n), db = 20 * Math.log10(rms + 1e-9);
-  if (db < settings.gate) return {rms, db, freq:0, clarity:0};
-  const minTau = Math.max(2, Math.floor(sr / FMAX));
-  const maxTau = Math.min((n >> 1) - 1, Math.ceil(sr / FMIN * 1.6));
-  let m = 2 * e;
-  for (let tau = 0; tau <= maxTau; tau++){
-    if (tau > 0){ const a = buf[n - tau], b = buf[tau - 1]; m -= a * a + b * b; }
-    let acf = 0;
-    for (let i = 0, lim = n - tau; i < lim; i++) acf += buf[i] * buf[i + tau];
-    nsdf[tau] = m > 1e-12 ? 2 * acf / m : 0;
-  }
-  const peaks = []; let pos = false, best = -1;
-  for (let tau = 1; tau <= maxTau; tau++){
-    const v = nsdf[tau];
-    if (!pos && nsdf[tau - 1] <= 0 && v > 0){ pos = true; best = -1; }
-    else if (pos && v <= 0){ if (best > 0) peaks.push(best); pos = false; }
-    if (pos && (best < 0 || v > nsdf[best])) best = tau;
-  }
-  if (pos && best > 0 && best < maxTau) peaks.push(best);
-  const ok = peaks.filter(t => t >= minTau && t < maxTau);
-  if (!ok.length) return {rms, db, freq:0, clarity:0};
-  let gmax = 0; for (const t of ok) gmax = Math.max(gmax, nsdf[t]);
-  const t = ok.find(p => nsdf[p] >= 0.9 * gmax);
-  const a = nsdf[t - 1], b = nsdf[t], c = nsdf[t + 1], den = a - 2 * b + c;
-  const shift = den !== 0 ? 0.5 * (a - c) / den : 0;
-  return {rms, db, freq: sr / (t + shift), clarity: b - 0.25 * (a - c) * shift};
-}
-
-/* ---------- Note segmentation ---------- */
-const makeSession = () => ({frames:[], segs:[], cur:null, silent:0, hopT:0});
-function feed(S, t, win, sr){
-  const r = detect(win, sr);
-  S.hopT = HOP / sr;
-  let midiF = null, voiced = false;
-  if (r.freq > 0 && r.clarity >= settings.clarity){
-    midiF = 69 + 12 * Math.log2(r.freq / settings.a4);
-    voiced = midiF > M_BOT && midiF < M_TOP;
-    if (!voiced) midiF = null;
-  }
-  const fr = {t, rms:r.rms, db:r.db, freq:r.freq, clarity:r.clarity, midiF, voiced};
-  S.frames.push(fr);
-  segment(S, fr);
-  return fr;
-}
-function openSeg(S, fr, m, cents, tongued){
-  S.cur = {midi:m, start:fr.t, end:fr.t, cs:cents, n:1, peak:fr.rms, dip:false, tongued};
-}
-function closeSeg(S){
-  const c = S.cur; if (!c) return;
-  const end = c.end + S.hopT;
-  S.segs.push({midi:c.midi, start:c.start, end, dur:end - c.start, cents:c.cs / c.n, tongued:c.tongued});
-  S.cur = null; S.silent = 0;
-}
-function segment(S, fr){
-  const c = S.cur;
-  if (fr.voiced){
-    S.silent = 0;
-    const m = Math.round(fr.midiF), cents = (fr.midiF - m) * 100;
-    if (c && c.midi === m){
-      S.pend = null;
-      if (!c.dip && fr.rms < c.peak * 0.45 && fr.t - c.start > 0.04) c.dip = true;
-      else if (c.dip && fr.rms > c.peak * 0.75){ closeSeg(S); openSeg(S, fr, m, cents, true); return; }
-      if (!c.dip) c.peak = Math.max(c.peak, fr.rms);
-      c.end = fr.t; c.cs += cents; c.n++;
-    } else if (!c){
-      openSeg(S, fr, m, cents, false);
-    } else {
-      // a new pitch must hold for 3 frames, so glides between notes are not counted as notes
-      const p = S.pend;
-      if (p && p.midi === m){
-        p.n++; p.cs += cents; p.last = fr.t;
-        if (p.n >= 3){
-          closeSeg(S);
-          S.cur = {midi:m, start:p.t, end:p.last, cs:p.cs, n:p.n, peak:p.peak, dip:false, tongued:false};
-          S.pend = null;
-        }
-      } else S.pend = {midi:m, t:fr.t, last:fr.t, n:1, cs:cents, peak:fr.rms};
-    }
-  } else if (c){
-    S.pend = null;
-    if (fr.rms < c.peak * 0.5 && fr.t - c.start > 0.04) c.dip = true;
-    if (++S.silent >= 3) closeSeg(S);
-  }
-}
-const HARMONICS = [12, 19, 24, 28]; // semitones to the 2nd, 3rd, 4th and 5th partials
-function annotate(all){
-  let segs = all;
-  const gms = settings.grace / 1000;
-  for (const s of segs){ s.kind = s.dur <= gms ? "grace" : "note"; s.orn = null; s.roll = 0; s.art = null; s.inScale = noteInfo(s.midi).inScale; }
-  // Transients: a short blip at a harmonic of a neighbouring note (overblown attack or release),
-  // or a sliver at the same pitch as a neighbouring note. Neither is a real ornament.
-  for (let i = 0; i < segs.length; i++){
-    const s = segs[i]; if (s.kind !== "grace") continue;
-    const p = segs[i - 1], n = segs[i + 1];
-    const pn = p && p.kind === "note" && s.start - p.end < 0.06 ? p : null;
-    const nn = n && n.kind === "note" && n.start - s.end < 0.06 ? n : null;
-    if (s.dur <= 0.03 && ((pn && pn.midi === s.midi) || (nn && nn.midi === s.midi))) { s.art = "sliver"; continue; }
-    const harm = a => a && HARMONICS.some(h => Math.abs(s.midi - a.midi - h) <= 1);
-    if (harm(nn) || harm(pn)) s.art = "overtone";
-  }
-  segs = segs.filter(s => !s.art);
-  for (let i = 1; i < segs.length - 1; i++){
-    const p = segs[i - 1], s = segs[i], n = segs[i + 1];
-    if (s.kind === "grace" && p.kind === "note" && n.kind === "note" && p.midi === n.midi &&
-        s.start - p.end < 0.05 && n.start - s.end < 0.05)
-      s.orn = s.midi > p.midi ? "cut" : "tap";
-  }
-  for (let i = 0; i + 4 < segs.length; i++){
-    const [a, b, c, d, e] = segs.slice(i, i + 5);
-    if (a.kind === "note" && b.orn === "cut" && d.orn === "tap" && a.midi === c.midi && c.midi === e.midi){
-      a.roll = 1; b.roll = c.roll = d.roll = 2; e.roll = 3; i += 4;
-    }
-  }
-  return all;
-}
+// The detector lives in src/audio/detector.js; these bind it to this page's live settings.
+const makeSession = () => newSession(settings);
+const annotate = segs => annotateSegs(segs, settings);
 
 /* ---------- Example clip: a synthesized whistle phrase with a roll, a cut and tongued repeats ---------- */
 function synthDemo(sr){
@@ -520,25 +398,6 @@ try {
   };
   bc.postMessage({type:"ready"});
 } catch (e) {}
-
-// Pair each intended note with a detected one: same pitch, start within 60 ms.
-function matchTruth(truth, segs){
-  const found = segs.filter(s => !s.art);
-  for (const s of found) s.extra = true;
-  let hit = 0, hitNotes = 0, notes = 0;
-  for (const n of truth.notes){
-    if (n.kind === "note") notes++;
-    let best = null;
-    for (const s of found){
-      if (!s.extra || s.midi !== n.midi) continue;
-      const d = Math.abs(s.start - n.start);
-      if (d < 0.06 && (!best || d < Math.abs(best.start - n.start))) best = s;
-    }
-    n.hit = !!best;
-    if (best){ best.extra = false; hit++; if (n.kind === "note") hitNotes++; }
-  }
-  return {hit, total: truth.notes.length, hitNotes, notes, orn: truth.notes.length - notes, extra: found.filter(s => s.extra).length};
-}
 
 /* ---------- Settings ---------- */
 const bind = (id, out, key, fmt) => {

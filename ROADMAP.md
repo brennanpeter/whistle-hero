@@ -6,14 +6,14 @@ Rough order of work for Whistle Hero. Each phase leans on the one before it. Che
 
 - [x] **Whistle Ear**, a pitch-detection test bench (McLeod pitch method, note segmentation, overtone and sliver filtering)
 - [x] **Whistle Sim**, a synthetic D whistle that plays ABC with tonguing, cuts, taps, rolls, slides, vibrato and human sloppiness, and outputs the list of notes it meant to play
-- [ ] Move the detector out of `whistle-ear.html` into a shared module (`src/audio/`) so Whistle Ear, the game and the tests all run the same code
-- [ ] Move the sim's ABC parser into `src/abc/` for the same reason (the game needs it for charts)
-- [ ] `npm test`: render Whistle Sim scenarios, run the detector on them, and fail if accuracy drops below a floor for each scenario. Run it in GitHub Actions on every push.
-- [ ] Switch to Vite once three.js comes in; deploy to GitHub Pages (HTTPS, so the mic works for anyone)
+- [x] Move the detector out of `whistle-ear.html` into a shared module (`src/audio/`) so Whistle Ear, the game and the tests all run the same code
+- [x] Move the sim's ABC parser into `src/abc/` for the same reason (the game needs it for charts)
+- [x] `npm test`: render Whistle Sim scenarios, run the detector on them, and fail if accuracy drops below the saved baseline for any scenario. Run it in GitHub Actions on every push.
+- [ ] Switch to Vite when three.js comes in (start of Phase 3); deploy to GitHub Pages (HTTPS, so the mic works for anyone)
 
 ## Phase 1: Harden the detector
 
-The simulator already shows where it struggles. Clean playing scores 88–100% of notes matched. The weak spots:
+The simulator already shows where it struggles. Clean playing scores 88–100% of notes matched; `npm run accuracy` prints the full table. Each fix here should raise those numbers, then `npm run accuracy -- --update` locks the gain in. The weak spots:
 
 - [ ] **Reverb tails.** In a live room, a note's echo keeps the pitch alive through rests and tongue gaps, so notes merge or run long. End notes on a falling energy envelope, not just silence.
 - [ ] **Slides.** A slide's glide registers as an extra, intermediate note. Recognize glides and report them as a slide into the target note.

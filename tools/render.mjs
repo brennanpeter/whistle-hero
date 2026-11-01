@@ -6,10 +6,10 @@
 //   node tools/render.mjs my-tune.abc --profile beginner --bpm 180 --seed 4 --reverb 0.2
 //   node tools/render.mjs --out some/folder ...   # default folder: test-audio/
 //
-// Any option from DEFAULTS in sim/whistle-synth.js can be passed as --name value.
+// Any option from DEFAULTS in src/sim/whistle-synth.js can be passed as --name value.
 import fs from "node:fs";
 import path from "node:path";
-import { renderAbc, encodeWav, PRESETS, PROFILES, DEFAULTS } from "../sim/whistle-synth.js";
+import { renderAbc, encodeWav, PRESETS, PROFILES, DEFAULTS } from "../src/sim/whistle-synth.js";
 
 const args = process.argv.slice(2);
 const opts = {}; const files = []; let out = "test-audio";
