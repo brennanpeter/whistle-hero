@@ -1,0 +1,370 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Whistle Sim</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;800&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Same instrument-bench look as Whistle Ear: tune on the left, the simulated player on the right, what it played underneath. */
+:root{
+  --bg:#E8EDEA; --surface:#F6F8F6; --ink:#16201D; --muted:#56655F; --line:#C5D0CA;
+  --brass:#946512; --brass-soft:#EBD8AE; --grace:#25756E; --off:#B0372B; --ok:#2B7A43;
+  --trace-bg:#F1F4F1;
+  --f-display:"Big Shoulders Display","Arial Narrow",Impact,sans-serif;
+  --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0F1412; --surface:#171E1B; --ink:#E2E8E4; --muted:#91A199; --line:#2B3732;
+  --brass:#DAAB4F; --brass-soft:#3B311F; --grace:#5FBBB1; --off:#E36B5D; --ok:#62BE7D;
+  --trace-bg:#121916; color-scheme:dark }}
+:root[data-theme="dark"]{
+  --bg:#0F1412; --surface:#171E1B; --ink:#E2E8E4; --muted:#91A199; --line:#2B3732;
+  --brass:#DAAB4F; --brass-soft:#3B311F; --grace:#5FBBB1; --off:#E36B5D; --ok:#62BE7D;
+  --trace-bg:#121916; color-scheme:dark }
+
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.5;padding:20px 16px 40px}
+.wrap{max-width:1180px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+h1,h2{margin:0;text-wrap:balance}
+h2{font:600 15px var(--f-body)}
+button,.btn,select{font:500 14px/1 var(--f-body);color:var(--ink);background:var(--surface);border:1px solid var(--line);
+  border-radius:6px;padding:10px 14px;cursor:pointer;display:inline-flex;align-items:center;gap:8px;white-space:nowrap}
+select{padding:8px 10px;max-width:100%}
+button:hover,.btn:hover,select:hover{border-color:var(--muted)}
+button:focus-visible,select:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--brass);outline-offset:2px}
+button.primary{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+button.primary.live{background:var(--off);border-color:var(--off);color:#fff}
+button:disabled{opacity:.45;cursor:default}
+button.small{padding:6px 10px;font-size:13px}
+
+.top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:16px}
+.brand h1{font:800 44px/0.95 var(--f-display);letter-spacing:.01em;text-transform:uppercase}
+.brand p{margin:6px 0 0;color:var(--muted)}
+.actions{display:flex;flex-wrap:wrap;gap:8px}
+.status{margin:0;font:13px var(--f-mono);color:var(--muted);min-height:1.5em}
+.warn{color:var(--off)}
+
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px;min-width:0}
+.eyebrow{font:500 11px var(--f-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.grid{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:16px}
+@media (max-width:860px){.grid{grid-template-columns:minmax(0,1fr)}}
+.head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px 12px;margin-bottom:12px}
+
+.tune{display:flex;flex-direction:column}
+textarea{width:100%;flex:1;min-height:300px;resize:vertical;font:13.5px/1.6 var(--f-mono);color:var(--ink);background:var(--bg);
+  border:1px solid var(--line);border-radius:6px;padding:12px 14px;tab-size:2}
+.hint{margin:10px 0 0;font-size:13px;color:var(--muted)}
+.hint code{font:12.5px var(--f-mono);background:var(--bg);padding:1px 5px;border-radius:4px}
+
+.player{display:flex;flex-direction:column;gap:14px}
+.row{display:flex;flex-direction:column;gap:4px}
+.row > label{font-weight:500;font-size:14px}
+fieldset{border:0;border-top:1px solid var(--line);margin:0;padding:12px 0 0;display:flex;flex-direction:column;gap:10px;min-width:0}
+legend{padding:0 8px 0 0;font:500 11px var(--f-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.set{display:flex;flex-direction:column;gap:2px;min-width:0}
+.set label{display:flex;justify-content:space-between;gap:8px;font-size:14px}
+.set output{font:13px var(--f-mono);color:var(--brass);font-variant-numeric:tabular-nums}
+.set input{width:100%;accent-color:var(--brass);margin:2px 0}
+.seed{display:flex;gap:8px;align-items:center}
+.seed input{width:90px;font:14px var(--f-mono);padding:7px 8px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink)}
+
+.legend{display:flex;flex-wrap:wrap;gap:12px;font:12px var(--f-mono);color:var(--muted)}
+.legend i{display:inline-block;width:14px;height:7px;border-radius:2px;margin-right:5px;vertical-align:middle}
+canvas#roll{width:100%;height:300px;display:block;border-radius:6px;touch-action:none}
+#summary{font:12px var(--f-mono);color:var(--muted)}
+.foot{font:12px var(--f-mono);color:var(--muted);margin:0}
+@media (max-width:520px){.brand h1{font-size:36px}canvas#roll{height:260px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <h1>Whistle Sim</h1>
+      <p>A synthetic D whistle for testing Whistle Ear without playing</p>
+    </div>
+    <div class="actions">
+      <button id="playBtn" class="primary" type="button">Play</button>
+      <button id="sendBtn" type="button">Send to Whistle Ear</button>
+      <button id="wavBtn" type="button">Download WAV</button>
+    </div>
+  </header>
+  <p id="status" class="status" role="status"></p>
+
+  <main class="grid">
+    <section class="panel tune" aria-label="Tune">
+      <div class="head">
+        <h2>Tune <span class="eyebrow">ABC notation</span></h2>
+        <select id="preset" aria-label="Example tune"></select>
+      </div>
+      <textarea id="abc" spellcheck="false" aria-label="ABC notation"></textarea>
+      <p class="hint">Paste any tune from The Session. Supported: <code>~</code> rolls, <code>{g}</code> cuts and taps, <code>( )</code> slurs, <code>!slide!</code>, <code>(3</code> triplets, <code>&gt;</code> broken rhythm, repeats and 1st/2nd endings.</p>
+      <p id="warn" class="hint warn"></p>
+    </section>
+
+    <section class="panel player" aria-label="Simulated player">
+      <div class="row">
+        <label for="profile">Player</label>
+        <select id="profile"></select>
+      </div>
+      <div class="row">
+        <label for="artic">Articulation</label>
+        <select id="artic">
+          <option value="abc">Tongue each note unless slurred</option>
+          <option value="legato">Legato: tongue only repeats</option>
+          <option value="tongued">Tongue every note</option>
+        </select>
+      </div>
+      <fieldset id="fsPlay"><legend>Playing</legend></fieldset>
+      <fieldset id="fsSlip"><legend>Slips</legend></fieldset>
+      <fieldset id="fsRoom"><legend>Room</legend></fieldset>
+      <fieldset><legend>Randomness</legend>
+        <div class="seed"><label for="seed">Seed</label><input id="seed" type="number" min="1" step="1"><button id="reroll" class="small" type="button">New take</button></div>
+      </fieldset>
+    </section>
+  </main>
+
+  <section class="panel" aria-label="What the simulator played">
+    <div class="head">
+      <h2>What it played</h2>
+      <span class="legend">
+        <span><i style="background:var(--brass)"></i>note</span>
+        <span><i style="background:var(--grace)"></i>cut or tap</span>
+        <span><i style="background:var(--off)"></i>injected transient</span>
+        <span><i style="background:var(--ink);width:3px;height:12px"></i>tongued</span>
+      </span>
+    </div>
+    <canvas id="roll"></canvas>
+    <p id="summary"></p>
+  </section>
+  <p class="foot">Send to Whistle Ear opens the test bench with this clip and the list of intended notes, so you can see what the detector got right. Both pages must be served from the same address (npm run dev).</p>
+</div>
+
+<script type="module">
+import { renderAbc, encodeWav, PRESETS, PROFILES, DEFAULTS, resolveOptions, noteName, LOW_D } from "./sim/whistle-synth.js";
+const $ = s => document.querySelector(s);
+
+const SLIDERS = [
+  ["fsPlay", "bpm",          "Tempo",            40, 240, 1,    v => v + " bpm"],
+  ["fsPlay", "tuningCents",  "Whistle tuning",  -50,  50, 1,    v => (v > 0 ? "+" : "") + v + " ¢"],
+  ["fsPlay", "breathiness",  "Breathiness",       0,   1, 0.05, v => Math.round(v * 100) + "%"],
+  ["fsPlay", "vibratoCents", "Vibrato depth",     0,  30, 1,    v => v ? "±" + v + " ¢" : "off"],
+  ["fsPlay", "graceMs",      "Cut and tap length",15, 80, 1,    v => v + " ms"],
+  ["fsPlay", "tongueMs",     "Tongue gap",       10,  60, 1,    v => v + " ms"],
+  ["fsSlip", "timingMs",     "Timing looseness",  0,  40, 1,    v => v ? "±" + v + " ms" : "exact"],
+  ["fsSlip", "pitchWobble",  "Note-to-note pitch wobble", 0, 20, 1, v => v ? "±" + v + " ¢" : "none"],
+  ["fsSlip", "overtoneProb", "Overblown attacks", 0, 0.6, 0.01, v => Math.round(v * 100) + "%"],
+  ["fsSlip", "fingerProb",   "Finger-crossing blips", 0, 0.8, 0.01, v => Math.round(v * 100) + "%"],
+  ["fsSlip", "crackProb",    "Cracked notes",     0, 0.4, 0.01, v => Math.round(v * 100) + "%"],
+  ["fsRoom", "roomNoiseDb",  "Background noise", -96, -30, 1,   v => v <= -96 ? "silent" : v + " dB"],
+  ["fsRoom", "humDb",        "Mains hum",       -120, -30, 1,   v => v <= -120 ? "off" : v + " dB"],
+  ["fsRoom", "reverb",       "Reverb",            0, 0.5, 0.01, v => v ? Math.round(v * 100) + "%" : "dry"],
+];
+
+// ---------- state ----------
+const STORE = "whistle-sim-state";
+let state = { preset: "reel", abc: PRESETS.reel.abc, profile: "typical", opts: {} };
+try { const s = JSON.parse(localStorage.getItem(STORE) || "null"); if (s && s.abc) state = { ...state, ...s }; } catch (e) {}
+const save = () => { try { localStorage.setItem(STORE, JSON.stringify(state)); } catch (e) {} };
+let result = null, tuneQpm = null;
+
+// ---------- build controls ----------
+for (const [k, p] of Object.entries(PRESETS)) $("#preset").append(new Option(p.label, k));
+$("#preset").append(new Option("My tune", "custom"));
+for (const [k, p] of Object.entries(PROFILES)) $("#profile").append(new Option(p.label, k));
+$("#profile").append(new Option("Custom", "custom"));
+const outs = {};
+for (const [fs, key, label, min, max, step, fmt] of SLIDERS) {
+  const id = "s_" + key, d = document.createElement("div"); d.className = "set";
+  d.innerHTML = `<label for="${id}"><span>${label}</span><output id="o_${key}"></output></label><input id="${id}" type="range" min="${min}" max="${max}" step="${step}">`;
+  $("#" + fs).append(d);
+  const el = d.querySelector("input"); outs[key] = { el, out: d.querySelector("output"), fmt };
+  el.addEventListener("input", () => {
+    if (key !== "bpm") materialize(); // tempo is about the tune, not the player
+    state.opts[key] = parseFloat(el.value);
+    outs[key].out.textContent = fmt(state.opts[key]); save(); schedule();
+  });
+}
+// Switching from a named player to Custom keeps that player's settings as the starting point.
+function materialize() {
+  if (state.profile === "custom") return;
+  const { bpm, seed, articulation } = state.opts;
+  state.opts = { ...resolveOptions({ profile: state.profile }), bpm, seed, articulation };
+  delete state.opts.profile;
+  state.profile = "custom"; $("#profile").value = "custom";
+}
+function current() {
+  const base = state.profile === "custom" ? { ...DEFAULTS, ...state.opts } : resolveOptions({ profile: state.profile, seed: state.opts.seed });
+  return { ...base, bpm: state.opts.bpm ?? base.bpm, articulation: state.opts.articulation || "abc", seed: state.opts.seed || 1 };
+}
+function syncControls() {
+  const o = current();
+  for (const [, key] of SLIDERS) {
+    const v = key === "bpm" ? (o.bpm ?? tuneQpm ?? 120) : o[key];
+    outs[key].el.value = v; outs[key].out.textContent = outs[key].fmt(+v);
+  }
+  $("#seed").value = o.seed; $("#artic").value = o.articulation;
+  $("#profile").value = state.profile; $("#preset").value = state.preset;
+}
+
+$("#abc").value = state.abc;
+$("#preset").addEventListener("change", e => {
+  const k = e.target.value; state.preset = k;
+  if (PRESETS[k]) { state.abc = PRESETS[k].abc; $("#abc").value = state.abc; delete state.opts.bpm; }
+  save(); schedule(0);
+});
+$("#abc").addEventListener("input", () => { state.abc = $("#abc").value; state.preset = "custom"; $("#preset").value = "custom"; save(); schedule(); });
+$("#profile").addEventListener("change", e => {
+  if (e.target.value === "custom") materialize();
+  else { const { bpm, seed, articulation } = state.opts; state.opts = { bpm, seed, articulation }; state.profile = e.target.value; }
+  save(); schedule(0);
+});
+$("#artic").addEventListener("change", e => { state.opts.articulation = e.target.value; save(); schedule(0); });
+$("#seed").addEventListener("change", e => { state.opts.seed = Math.max(1, parseInt(e.target.value) || 1); save(); schedule(0); });
+$("#reroll").addEventListener("click", () => { state.opts.seed = 1 + Math.floor(Math.random() * 99999); save(); schedule(0); });
+
+// ---------- render ----------
+let timer = null;
+function schedule(ms = 220) { clearTimeout(timer); timer = setTimeout(render, ms); }
+function render() {
+  stop();
+  const t0 = performance.now();
+  try {
+    const r = renderAbc(state.abc, current());
+    tuneQpm = r.truth.qpm; result = r;
+    syncControls();
+    const ms = Math.round(performance.now() - t0);
+    const n = r.truth.notes, notes = n.filter(x => x.kind === "note").length, orn = n.length - notes;
+    $("#warn").textContent = r.warnings.join(" · ");
+    $("#status").textContent = `${r.truth.title || "Untitled"} · ${r.truth.duration.toFixed(1)} s at ${Math.round(r.truth.qpm)} bpm · rendered in ${ms} ms` + (r.peak >= 0.999 ? " · clipping, lower the noise or hum" : "");
+    const byKind = k => r.truth.artifacts.filter(a => a.kind === k).length;
+    $("#summary").textContent = `${notes} notes · ${orn} cuts and taps · ${n.filter(x => x.tongued).length} tongued · injected: ${byKind("overtone")} overblown, ${byKind("finger")} finger-crossing, ${byKind("crack")} cracked`;
+    ["#playBtn", "#sendBtn", "#wavBtn"].forEach(s => $(s).disabled = false);
+  } catch (e) {
+    console.error(e); result = null;
+    $("#status").textContent = "Could not render that tune: " + e.message;
+    ["#playBtn", "#sendBtn", "#wavBtn"].forEach(s => $(s).disabled = true);
+  }
+  draw();
+}
+
+// ---------- playback ----------
+let play = null;
+function stop() {
+  if (!play) return;
+  try { play.src.stop(); } catch (e) {}
+  play.ctx.close(); play = null;
+  $("#playBtn").textContent = "Play"; $("#playBtn").classList.remove("live");
+}
+$("#playBtn").addEventListener("click", () => {
+  if (play) { stop(); return; }
+  if (!result) return;
+  const ctx = new AudioContext({ sampleRate: result.sr });
+  const b = ctx.createBuffer(1, result.samples.length, result.sr); b.copyToChannel(result.samples, 0);
+  const src = ctx.createBufferSource(); src.buffer = b; src.connect(ctx.destination);
+  src.onended = () => { if (play && play.src === src) stop(); };
+  src.start(); play = { ctx, src, t0: ctx.currentTime };
+  $("#playBtn").textContent = "Stop"; $("#playBtn").classList.add("live");
+  requestAnimationFrame(tick);
+});
+function tick() { draw(); if (play) requestAnimationFrame(tick); }
+
+$("#wavBtn").addEventListener("click", () => {
+  if (!result) return;
+  const name = (result.truth.title || "tune").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "tune";
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([encodeWav(result.samples, result.sr)], { type: "audio/wav" }));
+  a.download = `${name}-${state.profile}-seed${current().seed}.wav`;
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+});
+
+// ---------- hand-off to Whistle Ear ----------
+let bc = null, earSeen = 0, pending = null;
+try {
+  bc = new BroadcastChannel("whistle-hero");
+  bc.onmessage = e => {
+    const m = e.data || {};
+    if (m.type === "pong" || m.type === "ready") {
+      earSeen = performance.now();
+      if (pending) { bc.postMessage(pending); pending = null; $("#status").textContent = "Sent to Whistle Ear."; }
+    }
+  };
+  bc.postMessage({ type: "ping" });
+  setInterval(() => bc.postMessage({ type: "ping" }), 2000);
+} catch (e) { $("#sendBtn").disabled = true; }
+$("#sendBtn").addEventListener("click", () => {
+  if (!result || !bc) return;
+  const o = current();
+  const msg = { type: "clip", samples: result.samples, sr: result.sr, truth: result.truth,
+    label: `Simulated · ${result.truth.title || "tune"} · ${state.profile === "custom" ? "custom player" : PROFILES[state.profile].label} · seed ${o.seed}` };
+  if (performance.now() - earSeen < 4500) { bc.postMessage(msg); $("#status").textContent = "Sent to Whistle Ear. Switch to its tab."; }
+  else { pending = msg; window.open("whistle-ear.html", "whistle-ear"); $("#status").textContent = "Opening Whistle Ear…"; }
+});
+
+// ---------- piano roll ----------
+let C = {};
+function readTokens() {
+  const cs = getComputedStyle(document.documentElement);
+  for (const k of ["ink", "muted", "line", "brass", "grace", "off", "trace-bg"]) C[k] = cs.getPropertyValue("--" + k).trim();
+}
+readTokens();
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { readTokens(); draw(); });
+const M_TOP = 98.6, M_BOT = 73.4, SCALE_PC = [0, 2, 4, 5, 7, 9, 10, 11];
+function draw() {
+  const cv = $("#roll"), dpr = devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight;
+  if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
+  const g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.fillStyle = C["trace-bg"]; g.fillRect(0, 0, W, H);
+  if (!result) return;
+  const L = 44, R = 10, T = 10, B = 22, pw = W - L - R, ph = H - T - B, tr = result.truth;
+  const t1 = Math.max(tr.duration, 1);
+  const x = t => L + t / t1 * pw, y = m => T + (M_TOP - m) / (M_TOP - M_BOT) * ph;
+  const mono = getComputedStyle(document.body).getPropertyValue("--f-mono") || "monospace";
+  g.textAlign = "right"; g.textBaseline = "middle";
+  for (let m = LOW_D; m <= 98; m++) {
+    const pc = (m - LOW_D) % 12; if (!SCALE_PC.includes(pc)) continue;
+    const isD = pc === 0, yy = Math.round(y(m)) + 0.5;
+    g.strokeStyle = C.line; g.lineWidth = isD ? 1.4 : 0.7; g.setLineDash(pc === 10 ? [3, 4] : []);
+    g.beginPath(); g.moveTo(L, yy); g.lineTo(L + pw, yy); g.stroke();
+    if (pc !== 10) { g.fillStyle = isD ? C.ink : C.muted; g.font = (isD ? "600 " : "") + "11px " + mono; g.fillText(noteName(m), L - 8, yy); }
+  }
+  g.setLineDash([]);
+  const step = t1 > 40 ? 10 : t1 > 15 ? 5 : 1;
+  g.textAlign = "center"; g.textBaseline = "alphabetic"; g.font = "10px " + mono;
+  for (let s = 0; s <= t1; s += step) {
+    const xx = Math.round(x(s)) + 0.5;
+    g.strokeStyle = C.line; g.globalAlpha = .6; g.beginPath(); g.moveTo(xx, T); g.lineTo(xx, T + ph); g.stroke(); g.globalAlpha = 1;
+    g.fillStyle = C.muted; g.fillText(s + " s", xx, T + ph + 16);
+  }
+  for (const n of tr.notes) {
+    const x0 = x(n.start), x1 = Math.max(x(n.end) - 1, x0 + 2), yy = y(n.midi);
+    g.fillStyle = n.kind === "note" ? C.brass : C.grace; g.globalAlpha = .9;
+    g.beginPath();
+    if (n.slide) { g.moveTo(x0, yy + 9); g.lineTo(Math.min(x0 + 10, x1), yy - 4.5); g.lineTo(x1, yy - 4.5); g.lineTo(x1, yy + 4.5); g.lineTo(Math.min(x0 + 10, x1), yy + 4.5); }
+    else if (g.roundRect) g.roundRect(x0, yy - 4.5, x1 - x0, 9, 3); else g.rect(x0, yy - 4.5, x1 - x0, 9);
+    g.fill(); g.globalAlpha = 1;
+    if (n.tongued) { g.fillStyle = C.ink; g.fillRect(x0, yy - 7, 2, 14); }
+  }
+  g.fillStyle = C.off;
+  for (const a of tr.artifacts) {
+    const x0 = x(a.start), yy = y(a.kind === "crack" ? a.midi + 0.6 : a.midi);
+    if (a.kind === "crack") { g.fillRect(x0 - 1, yy - 2, 4, 4); continue; }
+    g.fillRect(x0 - 1, yy - 3.5, Math.max(3, x(a.end) - x0), 7);
+  }
+  if (play) {
+    const xx = Math.round(x(play.ctx.currentTime - play.t0)) + 0.5;
+    g.strokeStyle = C.ink; g.lineWidth = 1; g.beginPath(); g.moveTo(xx, T); g.lineTo(xx, T + ph); g.stroke();
+  }
+}
+addEventListener("resize", draw);
+syncControls();
+render();
+</script>
+</body>
+</html>

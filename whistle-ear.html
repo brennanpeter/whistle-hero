@@ -95,6 +95,7 @@ h2{font:600 15px var(--f-body)}
 .chip.grace .n{color:var(--grace)}
 .chip.offs .n{color:var(--off)}
 .chip.roll{background:var(--brass-soft)}
+.chip.extra{border:1.5px dashed var(--off)}
 .empty{color:var(--muted);margin:0}
 
 .sets{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:16px 24px}
@@ -124,7 +125,7 @@ h2{font:600 15px var(--f-body)}
   <p id="status" class="status" role="status"></p>
   <div id="micHelp" class="help" hidden>
     <p><strong>The microphone is blocked here.</strong> Live input needs this page running from your own computer.</p>
-    <p>Save the <code>whistle-ear.html</code> file from the chat, then in its folder run <code>python3 -m http.server 8000</code> and open <code>http://localhost:8000/whistle-ear.html</code> in Chrome or Firefox.</p>
+    <p>In the project folder run <code>npm run dev</code>, then open <code>http://localhost:5173/whistle-ear.html</code> in Chrome or Firefox.</p>
     <p>You can still record yourself on your phone and use Analyze a recording.</p>
   </div>
 
@@ -152,7 +153,7 @@ h2{font:600 15px var(--f-body)}
     <section class="panel trace" aria-label="Pitch trace">
       <div class="trace-head">
         <span class="eyebrow" id="traceLabel">Pitch trace</span>
-        <span class="legend"><span><i style="background:var(--brass)"></i>note</span><span><i style="background:var(--grace)"></i>cut, tap or grace</span><span><i style="background:var(--off)"></i>off the D scale</span><span><i style="background:var(--muted);opacity:.35"></i>ignored transient</span><span><i style="background:var(--muted);height:3px"></i>raw pitch</span></span>
+        <span class="legend"><span><i style="background:var(--brass)"></i>note</span><span><i style="background:var(--grace)"></i>cut, tap or grace</span><span><i style="background:var(--off)"></i>off the D scale</span><span><i style="background:var(--muted);opacity:.35"></i>ignored transient</span><span><i style="background:var(--muted);height:3px"></i>raw pitch</span><span id="truthKey" hidden><i style="background:transparent;border:1.5px dashed var(--ink);height:9px"></i>intended (simulator)</span><span id="missKey" hidden><i style="background:transparent;border:1.5px solid var(--off);height:9px"></i>missed</span></span>
       </div>
       <canvas id="trace"></canvas>
     </section>
@@ -377,12 +378,13 @@ function pickRest(S){
   for (const s of S.segs) if (s.kind === "note" && (!best || s.dur > best.dur)) best = s;
   return best ? frameAt(S.frames, (best.start + best.end) / 2) : null;
 }
-async function loadClip(data, sr, label){
+async function loadClip(data, sr, label, truth = null){
   stopPlay(); if (live) stopMic();
   mode = "clip";
   status("Analyzing…");
   const S = await analyzeBuffer(data, sr);
-  clip = {data, sr, label, dur: data.length / sr, S};
+  clip = {data, sr, label, dur: data.length / sr, S, truth};
+  $("#truthKey").hidden = $("#missKey").hidden = !truth;
   restFrame = pickRest(S);
   $("#traceLabel").textContent = label;
   $("#playBtn").disabled = false;
@@ -457,7 +459,8 @@ function stopMic(){
   // keep the take on screen as a clip without audio
   if (S.frames.length){
     const t0 = S.frames[0].t, t1 = S.frames[S.frames.length - 1].t;
-    clip = {data:null, sr:0, label:"Last live take", dur:t1, t0:Math.max(0, t1 - 30), S};
+    clip = {data:null, sr:0, label:"Last live take", dur:t1, t0:Math.max(0, t1 - 30), S, truth:null};
+    $("#truthKey").hidden = $("#missKey").hidden = true;
     restFrame = pickRest(S);
     $("#traceLabel").textContent = "Last live take";
   }
@@ -506,6 +509,36 @@ $("#playBtn").addEventListener("click", () => {
   src.start(); play = {ctx, src, t0: ctx.currentTime};
   $("#playBtn").textContent = "Stop clip";
 });
+
+/* ---------- Clips from Whistle Sim (whistle-sim.html, same origin) ---------- */
+try {
+  const bc = new BroadcastChannel("whistle-hero");
+  bc.onmessage = e => {
+    const m = e.data || {};
+    if (m.type === "ping") bc.postMessage({type:"pong"});
+    else if (m.type === "clip" && m.samples) loadClip(m.samples, m.sr, m.label || "Simulated clip", m.truth || null);
+  };
+  bc.postMessage({type:"ready"});
+} catch (e) {}
+
+// Pair each intended note with a detected one: same pitch, start within 60 ms.
+function matchTruth(truth, segs){
+  const found = segs.filter(s => !s.art);
+  for (const s of found) s.extra = true;
+  let hit = 0, hitNotes = 0, notes = 0;
+  for (const n of truth.notes){
+    if (n.kind === "note") notes++;
+    let best = null;
+    for (const s of found){
+      if (!s.extra || s.midi !== n.midi) continue;
+      const d = Math.abs(s.start - n.start);
+      if (d < 0.06 && (!best || d < Math.abs(best.start - n.start))) best = s;
+    }
+    n.hit = !!best;
+    if (best){ best.extra = false; hit++; if (n.kind === "note") hitNotes++; }
+  }
+  return {hit, total: truth.notes.length, hitNotes, notes, orn: truth.notes.length - notes, extra: found.filter(s => s.extra).length};
+}
 
 /* ---------- Settings ---------- */
 const bind = (id, out, key, fmt) => {
@@ -582,6 +615,19 @@ function draw(){
     g.beginPath(); g.moveTo(xx, T); g.lineTo(xx, T + ph); g.stroke(); g.globalAlpha = 1;
     g.fillStyle = C.muted; g.fillText(s + " s", xx, T + ph + 16);
   }
+  // intended notes from the simulator
+  if (mode === "clip" && clip && clip.truth){
+    g.lineWidth = 1.5;
+    for (const n of clip.truth.notes){
+      if (n.end < v.t0 || n.start > v.t1) continue;
+      const x0 = Math.max(x(n.start), L), x1 = Math.max(x(n.end), x0 + 3), yy = y(n.midi);
+      g.strokeStyle = n.hit === false ? C.off : C.ink;
+      g.globalAlpha = n.hit === false ? 0.9 : 0.45;
+      g.setLineDash(n.hit === false ? [] : [3, 3]);
+      g.strokeRect(x0 - 1, yy - 7, x1 - x0 + 2, 14);
+    }
+    g.setLineDash([]); g.globalAlpha = 1;
+  }
   // segments
   const segs = v.S.segs.slice();
   if (v.S.cur) segs.push({midi:v.S.cur.midi, start:v.S.cur.start, end:v.S.cur.end + v.S.hopT, open:true});
@@ -655,6 +701,7 @@ function showReadout(fr, label){
 function renderLog(){
   const segs = mode === "live" && live ? live.S.segs : clip ? clip.S.segs : [];
   annotate(segs);
+  const tm = mode === "clip" && clip && clip.truth ? matchTruth(clip.truth, segs) : null;
   const shown = segs.filter(s => !s.art).slice(-160);
   const log = $("#log"); log.innerHTML = "";
   if (!shown.length){
@@ -664,7 +711,7 @@ function renderLog(){
   }
   for (const s of shown){
     const inf = noteInfo(s.midi), el = document.createElement("span");
-    el.className = "chip" + (s.kind === "grace" ? " grace" : "") + (inf.inScale ? "" : " offs") + (s.roll ? " roll" : "");
+    el.className = "chip" + (s.kind === "grace" ? " grace" : "") + (inf.inScale ? "" : " offs") + (s.roll ? " roll" : "") + (tm && s.extra ? " extra" : "");
     el.title = `${s.cents >= 0 ? "+" : ""}${s.cents.toFixed(0)} cents, starts at ${s.start.toFixed(2)} s`;
     const n = document.createElement("span"); n.className = "n"; n.textContent = inf.name;
     const sm = document.createElement("small"); sm.textContent = Math.round(s.dur * 1000) + " ms";
@@ -681,6 +728,10 @@ function renderLog(){
   const med = cs.length ? cs[cs.length >> 1] : null;
   $("#stats").textContent = `${notes.length} notes · ${orn.length} ornaments · ${rolls} roll${rolls === 1 ? "" : "s"} · ${arts} transient${arts === 1 ? "" : "s"} ignored` +
     (med != null ? ` · median tuning ${med >= 0 ? "+" : "−"}${Math.abs(med).toFixed(0)} cents` : "");
+  if (tm){
+    const r = tm;
+    $("#stats").textContent += ` · vs intended: ${r.hitNotes}/${r.notes} notes, ${r.hit - r.hitNotes}/${r.orn} cuts and taps, ${r.extra} extra`;
+  }
 }
 
 const cv = $("#trace");

@@ -31,3 +31,6 @@ coverage/
 *.swp
 .DS_Store
 Thumbs.db
+
+# Rendered test clips (npm run render)
+test-audio/

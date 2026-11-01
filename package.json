@@ -1,0 +1,14 @@
+{
+  "name": "whistle-hero",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Guitar Hero-style browser game for the D tin whistle",
+  "type": "module",
+  "scripts": {
+    "dev": "node tools/serve.mjs",
+    "render": "node tools/render.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
