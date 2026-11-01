@@ -156,7 +156,21 @@ a{color:var(--brass)}
   </div>
 </div>
 
+<script>
+// If the game's code can't load (usually: the page is served by something other than Vite, so the
+// three.js package can't be found), say so instead of showing an empty tune list.
+addEventListener("error", e => {
+  if (window.__gameLoaded) return;
+  const m = document.getElementById("setupMsg"), sel = document.getElementById("tune");
+  if (sel) { sel.innerHTML = "<option>Game didn't load</option>"; sel.disabled = true; }
+  document.getElementById("startBtn").disabled = true;
+  if (m) m.textContent = /module specifier|three/i.test(e.message || "")
+    ? "The game couldn't load three.js. Stop any running server, then run: npm install, then npm run dev, and reload this page."
+    : "The game couldn't load: " + (e.message || "unknown error");
+});
+</script>
 <script type="module">
+window.__gameLoaded = false;
 import { parseAbc } from "./src/abc/abc.js";
 import { buildChart } from "./src/chart/chart.js";
 import { createGame } from "./src/game/engine.js";
@@ -390,6 +404,7 @@ addEventListener("keydown", e => {
   if (e.key === "Escape" || e.key === " ") { e.preventDefault(); $("#paused").hidden ? pause() : resume(); }
 });
 document.addEventListener("visibilitychange", () => { if (document.hidden) pause(); });
+window.__gameLoaded = true;
 </script>
 </body>
 </html>
