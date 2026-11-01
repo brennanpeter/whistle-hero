@@ -49,6 +49,8 @@ Whistle only for now (fiddle support would mean widening the detector's range; s
 - [x] Live input (`src/audio/live.js`): the detector runs in real time on the microphone or on the simulator's audio, reporting notes in the game's clock. Mic and speaker delays are compensated, with a manual timing adjustment until calibration lands.
 - [x] **Finger-hole view** (`src/game/views/finger-view.js`): rows of six holes down a highway, gold for the second octave, halos on fingers that move, flicks for cuts and taps, note names, part labels, and a hit line that lights up with the fingering being heard. It fits phone screens too.
 - [x] Game page (`play.html`): pick a tune, speed 50–120%, play yourself or watch a simulated player, a one-bar count-in, a heads-up display, pause (Esc or Space), and results with stars and personal bests
+- [x] Practice looping: repeat the tune until ended, optionally 5 bpm faster every third pass; − / + (or `[` / `]`) change the tempo from the next pass; results report full passes and top tempo
+- [x] Halos on moving fingers can be switched off (setup, pause menu, or `H`)
 - [ ] **Sheet music view**: a single staff scrolling past a playhead, drawn with abcjs from the tune's ABC. A "ghost" notehead shows the note being played at its place on the staff, colored by right or wrong, with an optional fingering strip underneath.
 - [ ] Mode switch on the setup screen (the sheet music button is already there, disabled)
 - [ ] Optional metronome during play, and a guide track for headphone users

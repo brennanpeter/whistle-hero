@@ -53,6 +53,12 @@ input[type=number]{font:14px var(--f-mono);color:var(--ink);background:var(--bg)
 .heard b{font:800 22px/1 var(--f-display);color:var(--ink);margin-left:6px;vertical-align:-2px}
 .count{position:fixed;inset:0;display:grid;place-items:center;font:800 140px/1 var(--f-display);color:var(--brass);pointer-events:none;text-shadow:0 4px 24px rgba(0,0,0,.6)}
 .pausebtn{position:fixed;right:max(16px,env(safe-area-inset-right));bottom:max(14px,env(safe-area-inset-bottom))}
+.tempo{position:fixed;left:max(16px,env(safe-area-inset-left));bottom:max(14px,env(safe-area-inset-bottom));display:flex;align-items:center;gap:8px;
+  background:rgba(13,18,16,.75);border-radius:8px;padding:6px}
+.tempo span{font:500 13px var(--f-mono);font-variant-numeric:tabular-nums;min-width:12ch;text-align:center}
+.tempo span b{display:block;font:800 20px/1 var(--f-display);color:var(--ink)}
+.tempo button{padding:8px 12px;font:600 15px var(--f-mono)}
+.check{display:flex;align-items:center;gap:8px;font-weight:400}
 
 /* panels */
 .overlay{position:fixed;inset:0;display:grid;place-items:center;padding:16px;background:rgba(8,11,10,.82);overflow-y:auto}
@@ -76,7 +82,7 @@ input[type=number]{font:14px var(--f-mono);color:var(--ink);background:var(--bg)
 .stars .off{color:var(--line)}
 .note{font-size:14px;background:var(--bg);border-radius:8px;padding:10px 12px}
 a{color:var(--brass)}
-@media (max-width:520px){.hud .score{font-size:30px}.judge{font-size:34px}.card h1{font-size:38px}.heard{top:auto;bottom:max(14px,env(safe-area-inset-bottom));left:16px;transform:none}.hud .tune{max-width:45vw;font-size:18px}}
+@media (max-width:520px){.hud .score{font-size:30px}.judge{font-size:34px}.card h1{font-size:38px}.heard{top:auto;bottom:max(64px,calc(env(safe-area-inset-bottom) + 50px));left:16px;transform:none}.hud .tune{max-width:45vw;font-size:18px}}
 </style>
 </head>
 <body>
@@ -90,6 +96,11 @@ a{color:var(--brass)}
 <div class="heard" id="heard" hidden>Hearing<b id="heardNote">–</b></div>
 <div class="count" id="count" hidden></div>
 <button class="pausebtn" id="pauseBtn" type="button" hidden>Pause</button>
+<div class="tempo" id="tempoCtl" hidden>
+  <button id="slower" type="button" aria-label="5 bpm slower from the next pass" title="Slower from the next pass ( [ )">−5</button>
+  <span id="tempoLabel" aria-live="polite"></span>
+  <button id="faster" type="button" aria-label="5 bpm faster from the next pass" title="Faster from the next pass ( ] )">+5</button>
+</div>
 
 <!-- setup -->
 <div class="overlay" id="setup">
@@ -110,6 +121,19 @@ a{color:var(--brass)}
     <div class="field">
       <label for="speed">Speed <output id="speedOut"></output></label>
       <input id="speed" type="range" min="50" max="120" step="5">
+    </div>
+    <div class="field">
+      <span class="lab">Repeat</span>
+      <div class="seg" role="group" aria-label="Repeat">
+        <button type="button" data-loop="off" aria-pressed="true">Play once</button>
+        <button type="button" data-loop="loop" aria-pressed="false">Loop</button>
+        <button type="button" data-loop="ramp" aria-pressed="false">Loop and speed up</button>
+      </div>
+      <span class="hint" id="loopHint"></span>
+    </div>
+    <div class="field">
+      <span class="lab">Display</span>
+      <label class="check"><input type="checkbox" id="halos"> Halos on fingers that move <span class="muted">(H while playing)</span></label>
     </div>
     <div class="field">
       <span class="lab">Who's playing</span>
@@ -142,7 +166,8 @@ a{color:var(--brass)}
 <!-- pause -->
 <div class="overlay" id="paused" hidden>
   <div class="card"><h2>Paused</h2>
-    <div class="row"><button class="primary" id="resumeBtn" type="button">Resume</button><button id="restartBtn" type="button">Restart</button><button id="quitBtn" type="button">Quit</button></div>
+    <label class="check"><input type="checkbox" id="halosP"> Halos on fingers that move</label>
+    <div class="row"><button class="primary" id="resumeBtn" type="button">Resume</button><button id="endBtn" type="button">End and see results</button><button id="restartBtn" type="button">Restart</button><button id="quitBtn" type="button">Quit</button></div>
   </div>
 </div>
 
@@ -172,7 +197,7 @@ addEventListener("error", e => {
 <script type="module">
 window.__gameLoaded = false;
 import { parseAbc } from "./src/abc/abc.js";
-import { buildChart } from "./src/chart/chart.js";
+import { buildChart, shiftChart } from "./src/chart/chart.js";
 import { createGame } from "./src/game/engine.js";
 import { createListener } from "./src/audio/live.js";
 import { DEFAULT_SETTINGS } from "./src/audio/detector.js";
@@ -184,7 +209,7 @@ const $ = s => document.querySelector(s);
 
 /* ---------- preferences ---------- */
 const PREFS = "whistle-hero-play";
-let prefs = { tune: null, speed: 100, input: "mic", profile: "typical", monitor: true, latency: 0, mode: "fingers" };
+let prefs = { tune: null, speed: 100, input: "mic", profile: "typical", monitor: true, latency: 0, mode: "fingers", loop: "off", halos: true };
 try { Object.assign(prefs, JSON.parse(localStorage.getItem(PREFS) || "{}")); } catch (e) {}
 const savePrefs = () => { try { localStorage.setItem(PREFS, JSON.stringify(prefs)); } catch (e) {} };
 const urlTune = new URLSearchParams(location.search).get("tune");
@@ -214,11 +239,33 @@ function fillTunes() {
   prefs.tune = sel.value;
 }
 fillTunes();
-$("#tune").addEventListener("change", e => { prefs.tune = e.target.value; savePrefs(); });
+$("#tune").addEventListener("change", e => { prefs.tune = e.target.value; savePrefs(); showSpeed(); });
+const LOOP_HINT = { off: "Play the tune through once and see your results.",
+  loop: "The tune repeats until you end it from the pause menu. Change the tempo between passes with − and + (or [ and ]).",
+  ramp: "The tune repeats, 5 bpm faster every third pass. − and + (or [ and ]) still nudge it." };
+function showLoop() {
+  document.querySelectorAll("[data-loop]").forEach(b => b.setAttribute("aria-pressed", b.dataset.loop === prefs.loop));
+  $("#loopHint").textContent = LOOP_HINT[prefs.loop];
+}
+showLoop();
+document.querySelectorAll("[data-loop]").forEach(b => b.addEventListener("click", () => { prefs.loop = b.dataset.loop; savePrefs(); showLoop(); }));
+$("#halos").checked = prefs.halos;
+function setHalos(on) {
+  prefs.halos = on; savePrefs();
+  $("#halos").checked = on; $("#halosP").checked = on;
+  if (S) S.view.setHalos(on);
+}
+$("#halos").addEventListener("change", e => setHalos(e.target.checked));
+$("#halosP").addEventListener("change", e => setHalos(e.target.checked));
 for (const [k, p] of Object.entries(PROFILES)) $("#profile").append(new Option(p.label, k));
 $("#profile").value = prefs.profile; $("#monitor").checked = prefs.monitor; $("#latency").value = prefs.latency;
 $("#speed").value = prefs.speed;
-const showSpeed = () => { $("#speedOut").textContent = prefs.speed + "%"; };
+const showSpeed = () => {
+  const t = lib.tunes.find(x => x.id === prefs.tune);
+  let bpm = "";
+  try { if (t) bpm = ` · ${Math.round(buildChart(parseAbc(t.abc), { bpm: t.bpm }).qpm * prefs.speed / 100)} bpm`; } catch (e) {}
+  $("#speedOut").textContent = prefs.speed + "%" + bpm;
+};
 showSpeed();
 $("#speed").addEventListener("input", e => { prefs.speed = +e.target.value; showSpeed(); savePrefs(); });
 $("#profile").addEventListener("change", e => { prefs.profile = e.target.value; savePrefs(); });
@@ -245,14 +292,15 @@ async function start() {
   msg("Getting ready…");
   const parsed = parseAbc(tune.abc, { transpose: tune.transpose || 0 });
   const base = buildChart(parsed, { bpm: tune.bpm });
-  const chart = buildChart(parsed, { bpm: base.qpm * prefs.speed / 100 });
+  const bpm0 = Math.round(base.qpm * prefs.speed / 100);
+  const chart = shiftChart(buildChart(parsed, { bpm: bpm0 }), 0, { loop: 1 });
   if (!chart.notes.length) { msg("That tune has no notes."); return; }
 
   const ctx = new AudioContext({ latencyHint: "interactive" });
   await ctx.resume();
   const ear = await createListener(ctx, { ...DEFAULT_SETTINGS });
   const outLat = (ctx.outputLatency || 0) + (ctx.baseLatency || 0);
-  let inLat = 0, simSrc = null, simLead = 0;
+  let inLat = 0;
   try {
     if (prefs.input === "mic") inLat = (await ear.useMicrophone()).inputLatency || 0;
   } catch (e) {
@@ -263,24 +311,19 @@ async function start() {
   const beat = chart.beatSeconds, countIn = Math.max(2, chart.beatsPerBar);
   const t0 = ctx.currentTime + 0.4 + countIn * beat;
   for (let k = countIn; k >= 1; k--) click(ctx, t0 - k * beat, k === countIn);
-  if (prefs.input === "sim") {
-    const r = renderAbc(tune.abc, { profile: prefs.profile, bpm: chart.qpm, transpose: tune.transpose || 0, seed: 1 + Math.floor(Math.random() * 9999) });
-    const buf = ctx.createBuffer(1, r.samples.length, r.sr); buf.copyToChannel(r.samples, 0);
-    simSrc = ctx.createBufferSource(); simSrc.buffer = buf;
-    ear.input(simSrc);
-    if (prefs.monitor) { const g = ctx.createGain(); g.gain.value = 0.8; simSrc.connect(g).connect(ctx.destination); }
-    simLead = r.truth.notes[0].start - chart.notes[0].t;
-    simSrc.start(t0 - simLead);
-  }
+
   // Detected times are when the sound reached the analyser. With a microphone, the player was hearing
   // the count-in late by the output delay and the mic adds its own delay; the simulator is direct.
   const comp = (prefs.input === "mic" ? outLat + inLat : 0) + prefs.latency / 1000;
   const game = createGame(chart);
   const stage = $("#stage"); stage.innerHTML = "";
-  const view = createFingerView(stage, chart);
-  S = { ctx, game, view, ear, t0, comp, outLat, tune, chart, simSrc, frame: null, ended: false, raf: 0 };
+  const view = createFingerView(stage, chart, { halos: prefs.halos });
+  S = { ctx, game, view, ear, t0, comp, outLat, tune, chart, parsed, sims: [], frame: null, ended: false, raf: 0,
+        loop: prefs.loop, passes: [{ start: 0, end: chart.end, bpm: bpm0, n: 1 }], baseBpm: bpm0, pass: 0 };
+  if (prefs.input === "sim") scheduleSim(S.passes[0]);
+  if (location.hash === "#debug") window.__game = S; // for tests and troubleshooting
 
-  ear.on("frame", fr => { if (S) S.frame = fr; });
+  ear.on("frame", fr => { if (S) { S.frame = fr; S.heardUpTo = fr.t; S.heardAt = performance.now(); } });
   ear.on("onset", e => game.onset(e.midi, e.t - t0 - comp));
   ear.on("grace", e => game.grace(e.midi, e.t - t0 - comp));
   game.on(onJudgment);
@@ -288,8 +331,11 @@ async function start() {
 
   $("#setup").hidden = true; $("#results").hidden = true; $("#paused").hidden = true;
   for (const id of ["#hud", "#heard", "#pauseBtn", "#progress"]) $(id).hidden = false;
+  $("#tempoCtl").hidden = S.loop === "off";
+  $("#endBtn").hidden = S.loop === "off";
+  $("#halosP").checked = prefs.halos;
   $("#hudTune").textContent = tune.title;
-  $("#hudInfo").textContent = `${prefs.speed}% · ${Math.round(chart.qpm)} bpm` + (prefs.input === "sim" ? ` · ${PROFILES[prefs.profile].label}` : "");
+  showPassInfo();
   updateHud();
   msg("");
   loop();
@@ -304,6 +350,57 @@ function click(ctx, at, strong) {
   const g = ctx.createGain(); g.gain.value = strong ? 0.9 : 0.6;
   src.connect(f).connect(g).connect(ctx.destination); src.start(at);
 }
+
+/* ---------- looping ---------- */
+// Tempo for pass n: the base tempo (which − / + change), plus 5 bpm every third pass when speeding up.
+const bpmFor = n => Math.max(30, S.baseBpm + (S.loop === "ramp" ? 5 * Math.floor((n - 1) / 3) : 0));
+function appendPass() {
+  const last = S.passes[S.passes.length - 1], n = last.n + 1, bpm = bpmFor(n);
+  const part = shiftChart(buildChart(S.parsed, { bpm }), last.end,
+    { firstNote: S.game.notes.length, firstOrnament: S.game.ornaments.length, loop: n });
+  S.game.extend(part); S.view.addChart(part);
+  const p = { start: last.end, end: part.end, bpm, n }; S.passes.push(p);
+  if (prefs.input === "sim") scheduleSim(p);
+  showPassInfo();
+}
+// the simulated player plays each pass from its own rendering, lined up on the game clock
+function scheduleSim(p) {
+  const r = renderAbc(S.tune.abc, { profile: prefs.profile, bpm: p.bpm, transpose: S.tune.transpose || 0, seed: 1 + Math.floor(Math.random() * 9999) });
+  const ctx = S.ctx, buf = ctx.createBuffer(1, r.samples.length, r.sr); buf.copyToChannel(r.samples, 0);
+  const src = ctx.createBufferSource(); src.buffer = buf;
+  // Each pass is rendered on its own, so the simulated player stops the air for 30 ms where one pass
+  // meets the next, as a player tongues there. Otherwise a tune ending and starting on the same note
+  // would run the two together.
+  const air = ctx.createGain(), stopAt = S.t0 + p.end;
+  air.gain.setValueAtTime(1, Math.max(ctx.currentTime, stopAt - 0.035));
+  air.gain.linearRampToValueAtTime(0, Math.max(ctx.currentTime, stopAt - 0.03));
+  src.connect(air); S.ear.input(air);
+  if (prefs.monitor) { const g = ctx.createGain(); g.gain.value = 0.8; air.connect(g).connect(ctx.destination); }
+  const lead = r.truth.notes[0].start - S.chart.notes[0].t; // the synth's lead-in before the first note
+  src.start(Math.max(ctx.currentTime, S.t0 + p.start - lead), Math.max(0, ctx.currentTime - (S.t0 + p.start - lead)));
+  S.sims.push(src);
+}
+function showPassInfo() {
+  if (!S) return;
+  const cur = S.passes[S.pass] || S.passes[0];
+  const extra = prefs.input === "sim" ? ` · ${PROFILES[prefs.profile].label}` : "";
+  $("#hudInfo").textContent = S.loop === "off" ? `${prefs.speed}% · ${cur.bpm} bpm${extra}` : `Pass ${cur.n} · ${cur.bpm} bpm${extra}`;
+  if (S.loop !== "off") {
+    // the next pass that hasn't been laid out yet is the first one a change can reach
+    const nextN = S.passes[S.passes.length - 1].n + 1;
+    const lab = $("#tempoLabel"); lab.innerHTML = "";
+    const b = document.createElement("b"); b.textContent = `${cur.bpm} bpm`;
+    lab.append(b, `pass ${nextN}: ${bpmFor(nextN)}`);
+  }
+}
+function nudgeTempo(d) {
+  if (!S || S.loop === "off") return;
+  S.baseBpm = Math.max(30, Math.min(400, S.baseBpm + d));
+  showPassInfo();
+  flash(d > 0 ? "Faster" : "Slower", "var(--brass)", `${bpmFor(S.passes[S.passes.length - 1].n + 1)} bpm from pass ${S.passes[S.passes.length - 1].n + 1}`);
+}
+$("#slower").addEventListener("click", () => nudgeTempo(-5));
+$("#faster").addEventListener("click", () => nudgeTempo(5));
 
 const JUDGE_TEXT = { perfect: ["Perfect", "var(--brass)"], good: ["Good", "var(--ok)"], ok: ["OK", "var(--grace)"], miss: ["Miss", "var(--off)"] };
 let judgeTimer = 0;
@@ -331,7 +428,7 @@ function updateHud() {
 
 // The note the player should be playing now (for colouring the hit line).
 function expectedAt(t) {
-  const ns = S.chart.notes;
+  const ns = S.game.notes;
   let lo = 0, hi = ns.length - 1, best = null;
   while (lo <= hi) { const m = (lo + hi) >> 1; if (ns[m].t <= t + 0.05) { best = ns[m]; lo = m + 1; } else hi = m - 1; }
   return best && t < best.t + best.dur + 0.05 ? best : null;
@@ -341,35 +438,56 @@ function loop() {
   if (!S) return;
   const { ctx, t0, outLat, game, view, chart } = S;
   const t = ctx.currentTime - t0 - outLat; // what the player is hearing now, in game time
-  // allow for the detector's own delay before declaring a miss
-  game.tick(ctx.currentTime - t0 - S.comp - 0.06);
+  // Only declare a miss once the detector has listened past the note's window. Going by the clock
+  // instead would call notes missed whenever the page stalls (rendering, garbage collection) while
+  // the detector's reports are still queued. If the detector has gone quiet, fall back to the clock.
+  const clockT = ctx.currentTime - t0 - S.comp - 0.06;
+  const live = S.heardUpTo != null && performance.now() - S.heardAt < 500;
+  game.tick(live ? Math.min(clockT, S.heardUpTo - t0 - S.comp - 0.03) : clockT);
   const fr = S.frame, heard = fr && fr.voiced ? Math.round(fr.midiF) : null;
   const exp = expectedAt(t);
   view.update(t, { midi: heard, expected: exp ? exp.midi : null });
   $("#heardNote").textContent = heard != null ? noteInfo(heard).name : "–";
-  $("#progress i").style.width = Math.max(0, Math.min(100, 100 * t / chart.duration)) + "%";
+  // looping: lay out the next pass well before it scrolls into view, and track which pass we're in
+  if (S.loop !== "off") {
+    if (t > S.passes[S.passes.length - 1].end - 6) appendPass();
+    let k = S.pass; while (k + 1 < S.passes.length && t >= S.passes[k + 1].start) k++;
+    if (k !== S.pass) { S.pass = k; showPassInfo(); }
+  }
+  const cp = S.passes[S.pass];
+  $("#progress i").style.width = Math.max(0, Math.min(100, 100 * (t - cp.start) / (cp.end - cp.start))) + "%";
   // count-in numbers
   const cnt = $("#count");
   if (t < 0) { const n = Math.ceil(-t / chart.beatSeconds); cnt.hidden = n > Math.max(2, chart.beatsPerBar); cnt.textContent = n; } else cnt.hidden = true;
-  if (!S.ended && game.finished(ctx.currentTime - t0 - S.comp - 0.1)) { S.ended = true; finish(); return; }
+  if (!S.ended && S.loop === "off" && game.finished(ctx.currentTime - t0 - S.comp - 0.1)) { S.ended = true; finish(); return; }
   S.raf = requestAnimationFrame(loop);
 }
 
 function stopSession() {
   if (!S) return;
   cancelAnimationFrame(S.raf);
-  try { S.simSrc && S.simSrc.stop(); } catch (e) {}
+  for (const src of S.sims) { try { src.stop(); } catch (e) {} }
   S.ear.stop(); S.ctx.close(); S.view.destroy();
-  for (const id of ["#hud", "#heard", "#pauseBtn", "#progress", "#count"]) $(id).hidden = true;
+  for (const id of ["#hud", "#heard", "#pauseBtn", "#progress", "#count", "#tempoCtl"]) $(id).hidden = true;
   $("#judge").classList.remove("show");
   S = null;
 }
 
 function finish() {
-  const s = S.game.summary(), tune = S.tune, input = prefs.input;
-  // save a personal best for your own playing
+  // when a loop is ended early, only count notes that have come due
+  const tNow = S.ctx.currentTime - S.t0 - S.comp;
+  if (S.loop !== "off") {
+    S.game.tick(tNow - 0.06);
+    const g = S.game, i = g.notes.findIndex(n => !n.result);
+    if (i >= 0) g.notes.splice(i);
+    const j = g.ornaments.findIndex(o => o.t > tNow);
+    if (j >= 0) g.ornaments.splice(j);
+  }
+  const s = S.game.summary(), tune = S.tune, input = prefs.input, looped = S.loop !== "off";
+  const passes = S.passes.filter(p => p.end <= tNow).length, topBpm = Math.max(...S.passes.filter(p => p.start <= tNow).map(p => p.bpm));
+  // save a personal best for your own playing (single play-throughs only, so scores compare)
   let best = false;
-  if (input === "mic" && s.score > (tune.best || 0)) { const t = lib.tunes.find(x => x.id === tune.id); if (t) { t.best = s.score; saveLibrary(lib); best = true; } }
+  if (input === "mic" && !looped && s.score > (tune.best || 0)) { const t = lib.tunes.find(x => x.id === tune.id); if (t) { t.best = s.score; saveLibrary(lib); best = true; } }
   stopSession();
   $("#rTitle").textContent = tune.title;
   const stars = $("#rStars"); stars.innerHTML = ""; stars.setAttribute("aria-label", `${s.stars} of 5 stars`);
@@ -382,6 +500,7 @@ function finish() {
   stat(s.maxCombo, "best combo");
   stat(`${s.perfect} / ${s.good} / ${s.ok}`, "perfect / good / ok");
   if (s.ornaments) stat(`${s.ornamentsHit}/${s.ornaments}`, "cuts and taps");
+  if (looped) { stat(passes, passes === 1 ? "full pass" : "full passes"); stat(topBpm, "top tempo (bpm)"); }
   const ms = Math.round(s.meanOffset * 1000);
   $("#rNote").textContent = s.hit < 3 ? "The game hardly heard any notes. Check the microphone is allowed and close enough, or try a slower speed."
     : Math.abs(ms) < 15 ? "Your timing was right on the beat."
@@ -391,6 +510,7 @@ function finish() {
 }
 
 function pause() { if (!S || S.ended) return; S.ctx.suspend(); $("#paused").hidden = false; }
+$("#endBtn").addEventListener("click", () => { if (!S) return; $("#paused").hidden = true; S.ended = true; finish(); });
 function resume() { if (!S) return; $("#paused").hidden = true; S.ctx.resume(); }
 $("#startBtn").addEventListener("click", start);
 $("#pauseBtn").addEventListener("click", pause);
@@ -402,6 +522,9 @@ $("#menuBtn").addEventListener("click", () => { $("#results").hidden = true; $("
 addEventListener("keydown", e => {
   if (!S) return;
   if (e.key === "Escape" || e.key === " ") { e.preventDefault(); $("#paused").hidden ? pause() : resume(); }
+  else if (e.key === "h" || e.key === "H") { setHalos(!prefs.halos); flash(prefs.halos ? "Halos on" : "Halos off", "var(--grace)"); }
+  else if (e.key === "[" || e.key === "-") nudgeTempo(-5);
+  else if (e.key === "]" || e.key === "=" || e.key === "+") nudgeTempo(5);
 });
 document.addEventListener("visibilitychange", () => { if (document.hidden) pause(); });
 window.__gameLoaded = true;

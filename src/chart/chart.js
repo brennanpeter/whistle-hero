@@ -84,3 +84,19 @@ export function buildChart(parsed, { bpm = null, graceMs = 35 } = {}) {
     duration: end, notes, ornaments, bars, beats,
   };
 }
+
+/**
+ * A copy of a chart moved later by `dt` seconds, with note and ornament ids continuing from
+ * `firstNote` / `firstOrnament`. Used to string passes of a tune together when looping.
+ * `loop` (1, 2, …) is recorded on every note so views and results can tell passes apart.
+ */
+export function shiftChart(chart, dt, { firstNote = 0, firstOrnament = 0, loop = 1 } = {}) {
+  return {
+    ...chart,
+    loop, start: dt, duration: chart.duration, end: dt + chart.duration,
+    notes: chart.notes.map(n => ({ ...n, id: n.id + firstNote, t: n.t + dt, expect: (n.expect ?? n.t) + dt, loop })),
+    ornaments: chart.ornaments.map(o => ({ ...o, id: o.id + firstOrnament, note: o.note + firstNote, t: o.t + dt, loop })),
+    bars: chart.bars.map(b => ({ ...b, t: b.t + dt, loop })),
+    beats: chart.beats.map(b => ({ ...b, t: b.t + dt })),
+  };
+}

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseAbc } from "../src/abc/abc.js";
-import { buildChart } from "../src/chart/chart.js";
+import { buildChart, shiftChart } from "../src/chart/chart.js";
 import { createGame, grade, eventsFromSession, replay, WINDOWS } from "../src/game/engine.js";
 import { renderAbc, PRESETS } from "../src/sim/whistle-synth.js";
 import { analyze } from "../src/audio/detector.js";
@@ -89,4 +89,18 @@ test("a sloppier player scores lower but still plays the tune", () => {
   const clean = score("clean"), beginner = score("beginner");
   assert.ok(beginner.accuracy < clean.accuracy);
   assert.ok(beginner.hit / beginner.notes > 0.8, `beginner hit ${beginner.hit}/${beginner.notes}`);
+});
+
+test("a looped tune can be extended pass by pass, each at its own tempo", () => {
+  const parsed = parseAbc("X:1\nM:4/4\nL:1/8\nK:D\nAB|");
+  const p1 = buildChart(parsed, { bpm: 120 });                 // 0.25 s per eighth, 0.5 s long
+  const g = createGame(shiftChart(p1, 0));
+  const p2 = shiftChart(buildChart(parsed, { bpm: 240 }), p1.duration, { firstNote: 2, firstOrnament: 0, loop: 2 });
+  g.extend(p2);
+  assert.deepEqual(g.notes.map(n => [n.id, +n.t.toFixed(3), n.loop]), [[0, 0, 1], [1, 0.25, 1], [2, 0.5, 2], [3, 0.625, 2]]);
+  for (const n of g.notes) g.onset(n.midi, n.t);
+  g.tick(10);
+  assert.equal(g.summary().hit, 4);
+  assert.equal(g.finished(0.7), false);
+  assert.equal(g.finished(0.9), true);
 });

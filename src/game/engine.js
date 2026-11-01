@@ -101,7 +101,16 @@ export function createGame(chart) {
     }
   }
 
-  const finished = t => t > chart.duration + WINDOWS.ok;
+  let duration = chart.duration;
+  const finished = t => t > duration + WINDOWS.ok;
+
+  /** Add more of the chart while playing (the next pass of a looped tune). Times must come after
+   *  everything already added; ids should continue from the existing ones (see shiftChart). */
+  function extend(part) {
+    for (const n of part.notes) notes.push({ ...n, result: null, offset: null });
+    for (const o of part.ornaments) ornaments.push({ ...o, result: null });
+    duration = Math.max(duration, part.end ?? part.duration);
+  }
 
   function summary() {
     const c = state.counts, judged = c.perfect + c.good + c.ok + c.miss;
@@ -117,7 +126,7 @@ export function createGame(chart) {
     };
   }
 
-  return { chart, notes, ornaments, state, onset, grace, tick, finished, summary, on: f => listeners.push(f) };
+  return { chart, notes, ornaments, state, onset, grace, tick, finished, extend, summary, on: f => listeners.push(f) };
 }
 
 /**

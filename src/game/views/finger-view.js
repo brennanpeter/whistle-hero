@@ -5,7 +5,8 @@
 // the detector is hearing right now.
 //
 // View contract (shared with every view): createXView(container, chart, opts) →
-//   { update(t, live), onEvent(e), resize(), destroy() }
+//   { update(t, live), onEvent(e), addChart(part), resize(), destroy() }
+// opts.halos = false hides the finger-move halos (setHalos(on) changes it while playing).
 // t is game time in seconds; live = { midi } for the note heard now (or null).
 import * as THREE from "three";
 import { noteInfo, FINGERINGS } from "../../whistle.js";
@@ -17,7 +18,8 @@ const COLORS = {
   hit: 0x62be7d, miss: 0x6b3a35, target: 0x91a199, heardOk: 0x62be7d, heardWrong: 0xe36b5d,
 };
 
-export function createFingerView(container, chart, { speed = 7, lookahead = 4 } = {}) {
+export function createFingerView(container, chart, opts = {}) {
+  const { speed = 7, lookahead = 4 } = opts;
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
   renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
   renderer.setClearColor(COLORS.bg);
@@ -51,66 +53,14 @@ export function createFingerView(container, chart, { speed = 7, lookahead = 4 } 
   const track = new THREE.Group(); scene.add(track);
   const zOf = t => -t * speed;
 
-  // bar and beat lines
-  {
-    const pts = [], beatPts = [];
-    for (const b of chart.bars) if (!b.pickup) pts.push(-4.1, 0, zOf(b.t), 4.1, 0, zOf(b.t));
-    for (const b of chart.beats) if (!b.strong) beatPts.push(-4.1, 0, zOf(b.t), 4.1, 0, zOf(b.t));
-    const mk = (arr, color) => { const g = keep(new THREE.BufferGeometry()); g.setAttribute("position", new THREE.Float32BufferAttribute(arr, 3)); return new THREE.LineSegments(g, keep(new THREE.LineBasicMaterial({ color }))); };
-    if (beatPts.length) track.add(mk(beatPts, COLORS.beat));
-    if (pts.length) track.add(mk(pts, COLORS.bar));
-  }
-
-  // note rows: filled discs (covered holes) and rings (open holes), as instanced meshes
   const fingering = midi => { const inf = noteInfo(midi); return inf.inScale ? FINGERINGS[inf.pc] : null; };
   const discGeo = keep(flat(new THREE.CircleGeometry(0.34, 28)));
   const ringGeo = keep(flat(new THREE.RingGeometry(0.25, 0.34, 28)));
   const haloGeo = keep(flat(new THREE.RingGeometry(0.43, 0.5, 28)));
   const flickGeo = keep(flat(new THREE.CircleGeometry(0.16, 4)));
-  const counts = { disc: 0, ring: 0, halo: 0, flick: chart.ornaments.length * 2 };
-  let prevF = null;
-  for (const n of chart.notes) {
-    const f = fingering(n.midi) || [0, 0, 0, 0, 0, 0];
-    for (let h = 0; h < 6; h++) { if (f[h]) counts.disc++; else counts.ring++; if (prevF && prevF[h] !== f[h]) counts.halo++; }
-    prevF = f;
-  }
-  const mat = () => keep(new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 1 }));
-  const discs = new THREE.InstancedMesh(discGeo, mat(), Math.max(1, counts.disc));
-  const rings = new THREE.InstancedMesh(ringGeo, mat(), Math.max(1, counts.ring));
-  const halos = new THREE.InstancedMesh(haloGeo, mat(), Math.max(1, counts.halo));
-  const flicks = new THREE.InstancedMesh(flickGeo, mat(), Math.max(1, counts.flick));
-  for (const m of [discs, rings, halos, flicks]) { m.count = 0; m.frustumCulled = false; track.add(m); }
   const M = new THREE.Matrix4(), col = new THREE.Color();
-  const put = (mesh, x, z, color, scale = 1) => {
-    const i = mesh.count++;
-    M.makeScale(scale, 1, scale); M.setPosition(x, 0, z); mesh.setMatrixAt(i, M);
-    mesh.setColorAt(i, col.set(color)); return i;
-  };
-  const rowParts = new Map(); // note id → [[mesh, index, baseColor]]
-  prevF = null;
-  let prevMidi = null;
-  for (const n of chart.notes) {
-    const inf = noteInfo(n.midi), f = fingering(n.midi), z = zOf(n.expect ?? n.t);
-    const base = !f ? COLORS.off : inf.oct >= 2 ? COLORS.third : inf.oct === 1 ? COLORS.high : COLORS.low;
-    const parts = [];
-    const ff = f || [0, 0, 0, 0, 0, 0];
-    for (let h = 0; h < 6; h++) {
-      if (ff[h]) parts.push([discs, put(discs, HOLE_X[h], z, base), base]);
-      else parts.push([rings, put(rings, HOLE_X[h], z, base), base]);
-      if (prevF && prevMidi !== n.midi && prevF[h] !== ff[h]) put(halos, HOLE_X[h], z, COLORS.change);
-    }
-    rowParts.set(n.id, parts);
-    prevF = ff; prevMidi = n.midi;
-  }
-  // cuts and taps: a flick on each finger that moves away from the main note's fingering
-  for (const o of chart.ornaments) {
-    const main = chart.notes[o.note], fm = fingering(main.midi), fo = fingering(o.midi);
-    if (!fm || !fo) continue;
-    for (let h = 0; h < 6; h++) if (fm[h] !== fo[h]) put(flicks, HOLE_X[h], zOf(o.t) + 0.15, COLORS.orn, 1.4);
-  }
-  for (const m of [discs, rings, halos, flicks]) { m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; }
 
-  // note names and octave arrows beside each row
+  // note names, octave arrows and part labels are sprites with cached text textures
   const labelCache = new Map();
   const labelTex = (text, color) => {
     const key = text + color;
@@ -122,19 +72,97 @@ export function createFingerView(container, chart, { speed = 7, lookahead = 4 } 
     const m = keep(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
     labelCache.set(key, m); return m;
   };
-  for (const n of chart.notes) {
-    const inf = noteInfo(n.midi), color = !inf.inScale ? COLORS.off : inf.oct >= 1 ? COLORS.high : COLORS.low;
-    const s = new THREE.Sprite(labelTex(inf.name + (inf.oct === 1 ? " ↑" : inf.oct >= 2 ? " ⇈" : "") + (!inf.inScale ? " ½" : ""), color));
-    s.scale.set(1.3, 0.65, 1); s.position.set(4.55, 0.25, zOf(n.expect ?? n.t)); track.add(s);
+
+  // The chart arrives in parts: the whole tune at once, or one pass at a time when looping.
+  // Each part is its own group, dropped once it has scrolled past.
+  const rowParts = new Map(); // note id → [[mesh, index]]
+  const noteById = new Map();
+  const parts = [];           // { group, end, meshes, halos }
+  let prevF = null, prevMidi = null, lastPart = -1, lastPass = 0, lastLoop = 1;
+  let showHalos = opts.halos !== false;
+
+  function addChart(part) {
+    const group = new THREE.Group(); track.add(group);
+    const own = []; // geometry and materials to free with this part
+    const mine = x => { own.push(x); return x; };
+    // bar and beat lines
+    const pts = [], beatPts = [];
+    for (const b of part.bars) if (!b.pickup) pts.push(-4.1, 0, zOf(b.t), 4.1, 0, zOf(b.t));
+    for (const b of part.beats) if (!b.strong) beatPts.push(-4.1, 0, zOf(b.t), 4.1, 0, zOf(b.t));
+    const lines = (arr, color) => { const g = mine(new THREE.BufferGeometry()); g.setAttribute("position", new THREE.Float32BufferAttribute(arr, 3)); return new THREE.LineSegments(g, mine(new THREE.LineBasicMaterial({ color }))); };
+    if (beatPts.length) group.add(lines(beatPts, COLORS.beat));
+    if (pts.length) group.add(lines(pts, COLORS.bar));
+
+    // note rows: filled discs (covered holes) and rings (open holes), as instanced meshes
+    const counts = { disc: 0, ring: 0, halo: 0, flick: part.ornaments.length * 2 };
+    { let pf = prevF;
+      for (const n of part.notes) {
+        const f = fingering(n.midi) || [0, 0, 0, 0, 0, 0];
+        for (let h = 0; h < 6; h++) { if (f[h]) counts.disc++; else counts.ring++; if (pf && pf[h] !== f[h]) counts.halo++; }
+        pf = f;
+      } }
+    const mat = () => mine(new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 1 }));
+    const discs = new THREE.InstancedMesh(discGeo, mat(), Math.max(1, counts.disc));
+    const rings = new THREE.InstancedMesh(ringGeo, mat(), Math.max(1, counts.ring));
+    const halos = new THREE.InstancedMesh(haloGeo, mat(), Math.max(1, counts.halo));
+    const flicks = new THREE.InstancedMesh(flickGeo, mat(), Math.max(1, counts.flick));
+    const meshes = [discs, rings, halos, flicks];
+    for (const m of meshes) { m.count = 0; m.frustumCulled = false; group.add(m); }
+    halos.visible = showHalos;
+    const put = (mesh, x, z, color, scale = 1) => {
+      const i = mesh.count++;
+      M.makeScale(scale, 1, scale); M.setPosition(x, 0, z); mesh.setMatrixAt(i, M);
+      mesh.setColorAt(i, col.set(color)); return i;
+    };
+    for (const n of part.notes) {
+      noteById.set(n.id, n);
+      const inf = noteInfo(n.midi), f = fingering(n.midi), z = zOf(n.expect ?? n.t);
+      const base = !f ? COLORS.off : inf.oct >= 2 ? COLORS.third : inf.oct === 1 ? COLORS.high : COLORS.low;
+      const row = [], ff = f || [0, 0, 0, 0, 0, 0];
+      for (let h = 0; h < 6; h++) {
+        if (ff[h]) row.push([discs, put(discs, HOLE_X[h], z, base)]);
+        else row.push([rings, put(rings, HOLE_X[h], z, base)]);
+        // a halo on each finger that moves since the previous note
+        if (prevF && prevMidi !== n.midi && prevF[h] !== ff[h]) put(halos, HOLE_X[h], z, COLORS.change);
+      }
+      rowParts.set(n.id, row);
+      prevF = ff; prevMidi = n.midi;
+      const lc = !inf.inScale ? COLORS.off : inf.oct >= 1 ? COLORS.high : COLORS.low;
+      const s = new THREE.Sprite(labelTex(inf.name + (inf.oct === 1 ? " ↑" : inf.oct >= 2 ? " ⇈" : "") + (!inf.inScale ? " ½" : ""), lc));
+      s.scale.set(1.3, 0.65, 1); s.position.set(4.55, 0.25, z); group.add(s);
+    }
+    // cuts and taps: a flick on each finger that moves away from the main note's fingering
+    for (const o of part.ornaments) {
+      const main = noteById.get(o.note), fm = main && fingering(main.midi), fo = fingering(o.midi);
+      if (!fm || !fo) continue;
+      for (let h = 0; h < 6; h++) if (fm[h] !== fo[h]) put(flicks, HOLE_X[h], zOf(o.t) + 0.15, COLORS.orn, 1.4);
+    }
+    for (const m of meshes) { m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; }
+    // part labels (A, B, a ² for the repeat) and the loop number when a new pass starts
+    for (const b of part.bars) {
+      const loop = b.loop || 1;
+      if (b.part === lastPart && b.pass === lastPass && loop === lastLoop) continue;
+      const text = String.fromCharCode(65 + b.part) + (b.pass === 2 ? "²" : "") + (loop > 1 && loop !== lastLoop ? `  ×${loop}` : "");
+      const s = new THREE.Sprite(labelTex(text, loop !== lastLoop ? COLORS.high : COLORS.bar));
+      s.scale.set(loop !== lastLoop ? 2 : 1.2, loop !== lastLoop ? 0.5 : 0.6, 1);
+      s.position.set(loop !== lastLoop ? -5.1 : -4.7, 0.2, zOf(b.t)); group.add(s);
+      lastPart = b.part; lastPass = b.pass; lastLoop = loop;
+    }
+    const end = part.end ?? part.duration;
+    parts.push({ group, end, meshes, halos, own, ids: part.notes.map(n => n.id) });
   }
-  // part labels at the start of each part
-  { let lastPart = -1, lastPass = 0;
-    for (const b of chart.bars) {
-      if (b.part === lastPart && b.pass === lastPass) continue;
-      const s = new THREE.Sprite(labelTex(String.fromCharCode(65 + b.part) + (b.pass === 2 ? "²" : ""), COLORS.bar));
-      s.scale.set(1.2, 0.6, 1); s.position.set(-4.7, 0.2, zOf(b.t)); track.add(s);
-      lastPart = b.part; lastPass = b.pass;
-    } }
+  addChart(chart);
+
+  // free parts that have scrolled well past the player
+  function prune(t) {
+    while (parts.length > 1 && parts[0].end < t - 3) {
+      const p = parts.shift();
+      track.remove(p.group);
+      for (const m of p.meshes) m.dispose();
+      for (const x of p.own) x.dispose?.();
+      for (const id of p.ids) { rowParts.delete(id); noteById.delete(id); }
+    }
+  }
 
   // hit line: six sockets that light up with the fingering being heard
   const sockets = HOLE_X.map(x => {
@@ -170,6 +198,7 @@ export function createFingerView(container, chart, { speed = 7, lookahead = 4 } 
   function update(t, live) {
     now = t;
     track.position.z = t * speed;
+    prune(t);
     // what the player is playing right now, shown on the hit line
     const heard = live && live.midi != null ? fingering(live.midi) : null;
     const ok = live && live.expected != null && live.midi === live.expected;
@@ -216,10 +245,12 @@ export function createFingerView(container, chart, { speed = 7, lookahead = 4 } 
 
   return {
     update, onEvent, resize,
+    addChart,                       // more of the tune (the next pass when looping)
+    setHalos(on) { showHalos = !!on; for (const p of parts) p.halos.visible = showHalos; },
     destroy() {
       cancelAnimationFrame(raf); ro.disconnect();
       for (const d of disposables) d.dispose?.();
-      for (const m of [discs, rings, halos, flicks]) m.dispose();
+      for (const p of parts) { for (const m of p.meshes) m.dispose(); for (const x of p.own) x.dispose?.(); }
       renderer.dispose(); renderer.domElement.remove();
     },
   };
