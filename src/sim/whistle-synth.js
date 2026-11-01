@@ -10,7 +10,7 @@
 //   import { renderAbc } from "./src/sim/whistle-synth.js";
 //   const { samples, sr, truth } = renderAbc(abcText, { profile: "typical", bpm: 140 });
 
-import { LOW_D, FINGERINGS, DIATONIC, noteName } from "../whistle.js";
+import { LOW_D, FINGERINGS, noteName, stepFrom, cutFor } from "../whistle.js";
 import { parseAbc } from "../abc/abc.js";
 
 export { LOW_D, FINGERINGS, noteName, parseAbc }; // re-exported so pages can import everything from here
@@ -21,20 +21,6 @@ const TAU = Math.PI * 2;
 const FING_TO_PC = Object.fromEntries(Object.entries(FINGERINGS).map(([pc, f]) => [f.join(""), +pc]));
 
 const fingeringOf = midi => FINGERINGS[((midi - LOW_D) % 12 + 12) % 12] || null;
-
-// Whistle scale notes (D major + C♯) across the playable range, used to pick cut and tap pitches.
-const WHISTLE_NOTES = [];
-for (let o = 0; o < 3; o++) for (const pc of DIATONIC) WHISTLE_NOTES.push(LOW_D + 12 * o + pc);
-const stepFrom = (midi, steps) => {
-  let i = WHISTLE_NOTES.findIndex(m => m >= midi);
-  if (i < 0) i = WHISTLE_NOTES.length - 1;
-  if (steps < 0 && WHISTLE_NOTES[i] > midi) i--; // midi between scale notes
-  const j = i + steps;
-  return j >= 0 && j < WHISTLE_NOTES.length ? WHISTLE_NOTES[j] : null;
-};
-
-// Cut pitch: two scale steps up, except on B, where lifting the only covered hole gives C♯.
-const cutFor = midi => (((midi - LOW_D) % 12 + 12) % 12 === 9 ? stepFrom(midi, 1) : stepFrom(midi, 2)) ?? midi + 2;
 
 /* ---------------------------------------------------------------- player profiles */
 
@@ -355,7 +341,7 @@ export function renderPerformance(perf) {
 
 /** One call: ABC text in, audio + ground truth out. */
 export function renderAbc(abc, opts = {}) {
-  const parsed = parseAbc(abc);
+  const parsed = parseAbc(abc, { transpose: opts.transpose || 0 });
   const perf = perform(parsed, opts);
   const { samples, sr, peak } = renderPerformance(perf);
   const truth = {

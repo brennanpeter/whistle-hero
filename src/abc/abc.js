@@ -1,6 +1,32 @@
-// ABC notation parser for whistle tunes (the format The Session uses).
-// Shared by Whistle Sim and, later, the game's chart builder.
+// ABC notation parser for whistle tunes.
+// Shared by Whistle Sim, the Tune Library and the game's chart builder.
 import { LOW_D } from "../whistle.js";
+
+// Information fields kept as tune metadata (ABC 2.1 letters).
+const META_FIELDS = { C: "composer", R: "rhythm", S: "source", Z: "transcriber", N: "notes", O: "origin", B: "book", H: "history", D: "discography", F: "fileUrl", P: "parts" };
+
+/**
+ * Split a pasted ABC file into tunes. Each tune starts at an X: line; lines before the first X:
+ * are a file header whose fields apply to every tune. Text with no X: at all is one tune.
+ * Returns [{ x, text }] where text is a complete tune that parseAbc can read.
+ */
+export function splitAbcFile(text) {
+  const lines = String(text).replace(/\r\n?/g, "\n").split("\n");
+  const starts = [];
+  lines.forEach((l, i) => { if (/^X:/.test(l.trim())) starts.push(i); });
+  if (!starts.length) return String(text).trim() ? [{ x: null, text: String(text).trim() }] : [];
+  const fileHeader = lines.slice(0, starts[0]).filter(l => /^[A-Za-z]:/.test(l.trim()) && !/^[A-Za-z]:\|/.test(l.trim()));
+  return starts.map((s, k) => {
+    const body = lines.slice(s, k + 1 < starts.length ? starts[k + 1] : lines.length);
+    while (body.length && !body[body.length - 1].trim()) body.pop();
+    const x = /^X:\s*(\d+)/.exec(body[0].trim());
+    // file-header fields go after X: so the tune's own fields override them
+    return { x: x ? +x[1] : null, text: [body[0], ...fileHeader, ...body.slice(1)].join("\n") };
+  }).filter(t => t.text.split("\n").some(l => /^K:/.test(l.trim())));
+}
+
+/** Parse every tune in a pasted file. */
+export const parseAbcFile = (text, opts) => splitAbcFile(text).map(t => ({ ...parseAbc(t.text, opts), x: t.x, abc: t.text }));
 
 const MAJOR_FIFTHS = { C:0, G:1, D:2, A:3, E:4, B:5, "F#":6, "C#":7, F:-1, Bb:-2, Eb:-3, Ab:-4, Db:-5, Gb:-6, Cb:-7, "G#":8, "D#":9, "A#":10 };
 const MODE_SHIFT = { maj:0, ion:0, mix:-1, dor:-2, min:-3, aeo:-3, m:-3, phr:-4, loc:-5, lyd:1 };
@@ -27,10 +53,16 @@ const LETTER_MIDI = { C:60, D:62, E:64, F:65, G:67, A:69, B:71 };
  * T: M: L: Q: K:, notes, rests, accidentals, lengths, broken rhythm (> <), ties, slurs,
  * triplets, grace notes {..}, rolls (~), !slide!, chords (first note kept), inline [K:].
  * Pitches are returned as sounding pitches for a D whistle (written ABC + one octave).
+ *
+ * Each note and rest carries pos (whole notes from the start), bar, part (0 = A part, 1 = B …)
+ * and pass (1 or 2 for the first or second time through a repeat). bars lists where each bar
+ * starts. Notes outside the whistle's range are folded by an octave; note.written keeps the
+ * pitch before folding. opts.transpose shifts every note by that many semitones first.
  */
-export function parseAbc(text) {
+export function parseAbc(text, opts = {}) {
   const warnings = [];
-  const head = { title: "", meter: "4/4", unit: null, tempo: null, key: "D" };
+  const transpose = opts.transpose || 0;
+  const head = { title: "", titles: [], meter: "4/4", unit: null, tempo: null, key: "D", meta: {} };
   const body = [];
   for (const raw of String(text).split(/\r?\n/)) {
     const line = raw.replace(/%.*$/, "");
@@ -38,7 +70,8 @@ export function parseAbc(text) {
     const f = /^([A-Za-z]):(?![|:])\s*(.*)$/.exec(line.trim());
     if (f) {
       const [, k, v] = f;
-      if (k === "T" && !head.title) head.title = v.trim();
+      if (k === "T") { if (!head.title) head.title = v.trim(); if (v.trim()) head.titles.push(v.trim()); }
+      else if (k in META_FIELDS && v.trim()) { const f2 = META_FIELDS[k]; head.meta[f2] = head.meta[f2] ? head.meta[f2] + "\n" + v.trim() : v.trim(); }
       else if (k === "M") head.meter = v.trim();
       else if (k === "L") head.unit = v.trim();
       else if (k === "Q") head.tempo = v.trim();
@@ -84,7 +117,7 @@ export function parseAbc(text) {
     const id = letter + octave;
     if (acc !== null) barAcc[id] = acc;
     const a = id in barAcc ? barAcc[id] : (key.acc[letter] || 0);
-    return { midi: LETTER_MIDI[letter] + 12 * octave + a + 12, i };
+    return { midi: LETTER_MIDI[letter] + 12 * octave + a + 12 + transpose, i };
   };
   const readLen = (s, i) => {
     const m = /^(\d*)(\/*)(\d*)/.exec(s.slice(i));
@@ -163,7 +196,8 @@ export function parseAbc(text) {
       const firstBar = run.indexOf("|"), lastBar = run.lastIndexOf("|");
       const end = firstBar < 0 ? run.startsWith("::") || run.startsWith(":") : run.slice(0, firstBar).includes(":");
       const start = firstBar < 0 ? run.includes("::") : run.slice(lastBar + 1).includes(":");
-      if (run.length || ending) items.push({ t: "bar", end, start: start || run === "::", ending });
+      const double = /\|\||\|\]|\[\|/.test(run);
+      if (run.length || ending) items.push({ t: "bar", end, start: start || run === "::", ending, double });
       barAcc = {};
       i = Math.max(j, i + 1); continue;
     }
@@ -194,36 +228,50 @@ export function parseAbc(text) {
     i++; // decorations like . H L M P S T u v and anything unknown
   }
 
-  // Expand repeats and 1st/2nd endings.
-  const events = [];
+  // Expand repeats and 1st/2nd endings, recording bars, parts and passes as we go.
+  const events = [], bars = [];
   let repStart = 0, pass = 1, skip = false;
+  let pos = 0, barNo = -1, sinceBar = 0, newBar = true, part = 0, partNotes = 0, partBars = 0, newPart = false;
+  const emit = it => {
+    if (newPart) { part++; partNotes = 0; partBars = 0; newPart = false; newBar = true; }
+    if (newBar) { barNo++; partBars++; bars.push({ pos, bar: barNo, part, pass }); newBar = false; }
+    events.push({ ...it, pos, bar: barNo, part, pass });
+    pos += it.len; sinceBar++; partNotes++;
+  };
+  const barLine = () => { if (sinceBar > 0) { newBar = true; sinceBar = 0; } };
   for (let k = 0; k < items.length; k++) {
     const it = items[k];
-    if (it.t !== "bar") { if (!skip) events.push({ ...it }); continue; }
+    if (it.t !== "bar") { if (!skip) emit(it); continue; }
     if (skip) {
-      if (it.ending && it.ending !== 1) { skip = false; pass = 1; }
-      else if (it.end && !it.ending) { /* end of 1st ending: keep skipping until the 2nd */ }
+      if (it.ending && it.ending !== 1) { skip = false; pass = 2; barLine(); }
       if (!skip && it.start) repStart = k + 1;
       continue;
     }
+    barLine();
     if (it.ending === 1 && pass === 2) { skip = true; continue; }
     if (it.end) {
       if (pass === 1) { pass = 2; k = repStart - 1; continue; }
       pass = 1; repStart = k + 1;
+      if (partNotes > 0) newPart = true;
     }
-    if (it.ending && it.ending !== 1 && pass === 1) { /* 2nd ending reached in order */ }
-    if (it.start) { repStart = k + 1; pass = 1; }
+    // a pickup bar before the first |: belongs to the A part
+    if (it.start) { repStart = k + 1; pass = 1; if (partNotes > 0 && !(part === 0 && partBars === 1)) newPart = true; }
+    if (it.double && partNotes > 0) newPart = true;
+    if (it.double && !it.end) { repStart = k + 1; pass = 1; } // a later :| repeats from the last double bar
   }
 
   // Fold notes below the whistle's range up an octave (players do the same).
-  let folded = 0;
+  let folded = 0, foldedDown = 0;
   for (const e of events) {
     if (e.t !== "note") continue;
+    e.written = e.midi;
     while (e.midi < LOW_D) { e.midi += 12; folded++; }
-    while (e.midi > LOW_D + 26) e.midi -= 12;
-    e.graces = e.graces.map(g => { while (g < LOW_D) g += 12; return g; });
+    while (e.midi > LOW_D + 26) { e.midi -= 12; foldedDown++; }
+    e.graces = e.graces.map(g => { while (g < LOW_D) g += 12; while (g > LOW_D + 26) g -= 12; return g; });
   }
   if (folded) warnings.push(`${folded} note${folded === 1 ? "" : "s"} below low D raised an octave`);
+  if (foldedDown) warnings.push(`${foldedDown} note${foldedDown === 1 ? "" : "s"} above high E lowered an octave`);
   if (!events.some(e => e.t === "note")) warnings.push("No notes found");
-  return { title: head.title, meter: head.meter, key: head.key, qpm, events, warnings };
+  return { title: head.title, titles: head.titles, meter: head.meter, unit, key: head.key, qpm, meta: head.meta,
+    transpose, events, bars, length: pos, parts: part + 1, warnings };
 }

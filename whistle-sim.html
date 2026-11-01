@@ -286,7 +286,7 @@ $("#wavBtn").addEventListener("click", () => {
 });
 
 // ---------- hand-off to Whistle Ear ----------
-let bc = null, earSeen = 0, pending = null;
+let bc = null, earSeen = -Infinity, pending = null;
 try {
   bc = new BroadcastChannel("whistle-hero");
   bc.onmessage = e => {

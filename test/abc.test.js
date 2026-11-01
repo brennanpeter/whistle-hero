@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseAbc, keySignature } from "../src/abc/abc.js";
+import { parseAbc, parseAbcFile, splitAbcFile, keySignature } from "../src/abc/abc.js";
 
 const tune = (body, head = "M:4/4\nL:1/8\nK:D") => parseAbc(`X:1\nT:t\n${head}\n${body}`);
 const notes = p => p.events.filter(e => e.t === "note");
@@ -86,4 +86,44 @@ test("rests and an empty tune", () => {
   const p = tune("A z2 B");
   assert.deepEqual(p.events.map(e => e.t), ["note", "rest", "note"]);
   assert.ok(parseAbc("X:1\nK:D\n").warnings.includes("No notes found"));
+});
+
+test("a pasted file splits into tunes, sharing the file header", () => {
+  const f = parseAbcFile("% my tunes\nL:1/8\nM:6/8\n\nX:1\nT:One\nK:G\nGAB|\n\nX:2\nT:Two\nM:4/4\nK:D\nDEFG|\n\nX:3\nT:No key line\nABC|\n");
+  assert.deepEqual(f.map(t => [t.x, t.title, t.meter]), [[1, "One", "6/8"], [2, "Two", "4/4"]]);
+  assert.equal(splitAbcFile("K:D\nDEF").length, 1, "a tune with no X: is still a tune");
+  assert.equal(splitAbcFile("   ").length, 0);
+});
+
+test("metadata fields are kept", () => {
+  const p = parseAbc("X:1\nT:Main\nT:Other name\nC:Trad.\nR:reel\nZ:someone\nS:a book\nN:line one\nN:line two\nK:D\nA");
+  assert.deepEqual(p.titles, ["Main", "Other name"]);
+  assert.deepEqual(p.meta, { composer: "Trad.", rhythm: "reel", transcriber: "someone", source: "a book", notes: "line one\nline two" });
+});
+
+test("bars, parts and passes", () => {
+  const p = tune("|:AB cd|ef ga:|\n|:ba gf|1ed cB:|2ed d2||");
+  assert.equal(p.parts, 2);
+  assert.deepEqual(p.bars.map(b => [b.part, b.pass]), [[0, 1], [0, 1], [0, 2], [0, 2], [1, 1], [1, 1], [1, 2], [1, 2]]);
+  assert.deepEqual(p.events.slice(0, 3).map(e => e.pos), [0, 1 / 8, 2 / 8]);
+  assert.equal(p.length, 4);
+});
+
+test("a pickup belongs to the A part", () => {
+  const p = tune("A|:d2A B3|f2e d2A:|", "M:6/8\nL:1/8\nK:D");
+  assert.equal(p.parts, 1);
+  assert.ok(p.events.every(e => e.part === 0));
+});
+
+test("a later :| repeats from the last double bar", () => {
+  assert.deepEqual(pitches(tune("AB||cd:|")), [81, 83, 85, 86, 85, 86]);
+});
+
+test("transpose shifts every note and keeps the written pitch", () => {
+  const p = parseAbc("X:1\nK:F\nF", { transpose: -3 });
+  assert.equal(notes(p)[0].midi, 74);
+  assert.equal(notes(p)[0].written, 74);
+  const low = tune("A,");
+  assert.equal(notes(low)[0].written, 69);
+  assert.equal(notes(low)[0].midi, 81);
 });

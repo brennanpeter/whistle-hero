@@ -26,3 +26,21 @@ export function noteInfo(midi) {
 }
 
 export const noteName = midi => noteInfo(midi).name;
+
+// Whistle scale notes (D major + C♯) across the playable range, used to pick cut and tap pitches.
+export const WHISTLE_NOTES = [];
+for (let o = 0; o < 3; o++) for (const pc of DIATONIC) WHISTLE_NOTES.push(LOW_D + 12 * o + pc);
+
+/** The whistle-scale note `steps` scale steps from midi (null when off the end of the range). */
+export const stepFrom = (midi, steps) => {
+  let i = WHISTLE_NOTES.findIndex(m => m >= midi);
+  if (i < 0) i = WHISTLE_NOTES.length - 1;
+  if (steps < 0 && WHISTLE_NOTES[i] > midi) i--; // midi between scale notes
+  const j = i + steps;
+  return j >= 0 && j < WHISTLE_NOTES.length ? WHISTLE_NOTES[j] : null;
+};
+
+/** Cut pitch: two scale steps up, except on B, where lifting the only covered hole gives C♯. */
+export const cutFor = midi => (((midi - LOW_D) % 12 + 12) % 12 === 9 ? stepFrom(midi, 1) : stepFrom(midi, 2)) ?? midi + 2;
+/** Tap pitch: one scale step down; null on low D, which has no hole below it. */
+export const tapFor = midi => stepFrom(midi, -1);

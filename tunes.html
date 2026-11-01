@@ -1,0 +1,508 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tune Library</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;800&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Same instrument-bench look as Whistle Ear and Whistle Sim: the library on the left, the chosen tune on the right, its chart underneath. */
+:root{
+  --bg:#E8EDEA; --surface:#F6F8F6; --ink:#16201D; --muted:#56655F; --line:#C5D0CA;
+  --brass:#946512; --brass-soft:#EBD8AE; --grace:#25756E; --off:#B0372B; --ok:#2B7A43;
+  --trace-bg:#F1F4F1;
+  --f-display:"Big Shoulders Display","Arial Narrow",Impact,sans-serif;
+  --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0F1412; --surface:#171E1B; --ink:#E2E8E4; --muted:#91A199; --line:#2B3732;
+  --brass:#DAAB4F; --brass-soft:#3B311F; --grace:#5FBBB1; --off:#E36B5D; --ok:#62BE7D;
+  --trace-bg:#121916; color-scheme:dark }}
+:root[data-theme="dark"]{
+  --bg:#0F1412; --surface:#171E1B; --ink:#E2E8E4; --muted:#91A199; --line:#2B3732;
+  --brass:#DAAB4F; --brass-soft:#3B311F; --grace:#5FBBB1; --off:#E36B5D; --ok:#62BE7D;
+  --trace-bg:#121916; color-scheme:dark }
+
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.5;padding:20px 16px 40px}
+.wrap{max-width:1180px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+h1,h2,h3{margin:0;text-wrap:balance}
+h2{font:600 15px var(--f-body)}
+button,.btn,select{font:500 14px/1 var(--f-body);color:var(--ink);background:var(--surface);border:1px solid var(--line);
+  border-radius:6px;padding:10px 14px;cursor:pointer;display:inline-flex;align-items:center;gap:8px;white-space:nowrap}
+select{padding:8px 10px;max-width:100%}
+button:hover,.btn:hover,select:hover{border-color:var(--muted)}
+button:focus-visible,select:focus-visible,input:focus-visible,textarea:focus-visible,.btn:focus-within{outline:2px solid var(--brass);outline-offset:2px}
+button.primary{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+button.primary.live{background:var(--off);border-color:var(--off);color:#fff}
+button.small,.btn.small{padding:6px 10px;font-size:13px}
+button.danger{color:var(--off)}
+button:disabled{opacity:.45;cursor:default}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+.top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:16px}
+.brand h1{font:800 44px/0.95 var(--f-display);letter-spacing:.01em;text-transform:uppercase}
+.brand p{margin:6px 0 0;color:var(--muted)}
+.actions{display:flex;flex-wrap:wrap;gap:8px}
+.status{margin:0;font:13px var(--f-mono);color:var(--muted);min-height:1.5em}
+
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px;min-width:0}
+.eyebrow{font:500 11px var(--f-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px 12px;margin-bottom:12px}
+textarea{width:100%;resize:vertical;font:13.5px/1.6 var(--f-mono);color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:12px 14px}
+input[type=search],input[type=number]{font:14px var(--f-body);color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px 10px}
+.hint{margin:8px 0 0;font-size:13px;color:var(--muted)}
+
+.grid{display:grid;grid-template-columns:340px minmax(0,1fr);gap:16px;align-items:start}
+@media (max-width:860px){.grid{grid-template-columns:minmax(0,1fr)}}
+
+/* library list */
+.filters{display:flex;gap:8px;margin-bottom:10px}
+.filters input{flex:1;min-width:0}
+.list{display:flex;flex-direction:column;gap:2px;max-height:560px;overflow-y:auto;margin:0 -6px;padding:0 6px}
+.row{display:grid;grid-template-columns:28px minmax(0,1fr);gap:4px 6px;align-items:center;padding:8px 8px;border-radius:6px;cursor:pointer;border:1px solid transparent;text-align:left;background:none;width:100%;font:inherit;color:inherit}
+.row:hover{background:var(--bg)}
+.row.sel{background:var(--bg);border-color:var(--line)}
+.row .star{grid-row:span 2;background:none;border:0;padding:4px;font-size:17px;line-height:1;color:var(--line);cursor:pointer}
+.row .star.on{color:var(--brass)}
+.row .t{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .m{font:12px var(--f-mono);color:var(--muted);display:flex;gap:8px;flex-wrap:wrap}
+.badge{font:500 11px var(--f-mono);padding:1px 6px;border-radius:4px;background:var(--brass-soft);color:var(--ink)}
+.badge.warn{background:transparent;border:1px solid var(--off);color:var(--off)}
+.empty{color:var(--muted);margin:0}
+
+/* detail */
+.detail{display:flex;flex-direction:column;gap:16px}
+.title h2{font:800 34px/1 var(--f-display);text-transform:uppercase;letter-spacing:.01em}
+.title .alt{color:var(--muted);margin:4px 0 0;font-size:14px}
+.facts{display:flex;flex-wrap:wrap;gap:6px 18px;font:13px var(--f-mono);color:var(--muted)}
+.facts b{color:var(--ink);font-weight:500}
+.credits{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:4px 14px;font-size:14px;margin:0}
+.credits dt{color:var(--muted)}
+.credits dd{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
+.check{border-radius:8px;padding:12px 14px;background:var(--bg);display:flex;flex-direction:column;gap:6px}
+.check.good{border-left:3px solid var(--ok)}
+.check.bad{border-left:3px solid var(--off)}
+.check p{margin:0}
+.check ul{margin:0;padding-left:18px}
+.controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.controls label{font-size:14px;display:inline-flex;align-items:center;gap:6px}
+.controls input[type=number]{width:80px}
+
+.chartwrap{overflow-x:auto;border-radius:6px;background:var(--trace-bg)}
+canvas#chart{display:block;height:300px}
+.legend{display:flex;flex-wrap:wrap;gap:12px;font:12px var(--f-mono);color:var(--muted)}
+.legend i{display:inline-block;width:14px;height:7px;border-radius:2px;margin-right:5px;vertical-align:middle}
+details summary{cursor:pointer;font-weight:500}
+.foot{font:12px var(--f-mono);color:var(--muted);margin:0}
+@media (max-width:520px){.brand h1{font-size:36px}.title h2{font-size:28px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <h1>Tune Library</h1>
+      <p>Paste ABC, check it fits the D whistle, and see the chart the game will play</p>
+    </div>
+    <div class="actions">
+      <button id="exportBtn" type="button">Back up library</button>
+      <label class="btn" for="importIn">Restore from backup<input id="importIn" class="sr" type="file" accept=".json,application/json"></label>
+    </div>
+  </header>
+  <p id="status" class="status" role="status"></p>
+
+  <section class="panel" aria-label="Add tunes">
+    <div class="head">
+      <h2>Add tunes <span class="eyebrow">ABC notation</span></h2>
+      <div class="actions">
+        <label class="btn small" for="fileIn">Open .abc file<input id="fileIn" class="sr" type="file" accept=".abc,.txt,text/plain"></label>
+        <button id="exampleBtn" class="small" type="button">Add example tunes</button>
+      </div>
+    </div>
+    <textarea id="paste" rows="6" spellcheck="false" placeholder="X:1&#10;T:Tune name&#10;R:reel&#10;M:4/4&#10;L:1/8&#10;K:D&#10;|:FA~A2 dAFA|..." aria-label="ABC to add"></textarea>
+    <div class="controls" style="margin-top:10px">
+      <button id="addBtn" class="primary" type="button">Add to library</button>
+      <span class="hint" style="margin:0">One tune or a whole file: every tune that starts with X: is added. Tunes with the same name are kept together as settings.</span>
+    </div>
+  </section>
+
+  <main class="grid">
+    <section class="panel" aria-label="Library">
+      <div class="head"><h2>Library</h2><span id="count" class="eyebrow"></span></div>
+      <div class="filters">
+        <input id="search" type="search" placeholder="Search names, types, keys" aria-label="Search the library">
+        <button id="favFilter" class="small" type="button" aria-pressed="false" title="Show favorites only">★ Favorites</button>
+      </div>
+      <div id="list" class="list" role="listbox" aria-label="Tunes"></div>
+    </section>
+
+    <section id="detail" class="panel detail" aria-label="Tune" hidden>
+      <div class="title">
+        <h2 id="dTitle"></h2>
+        <p id="dAlt" class="alt"></p>
+      </div>
+      <div id="dFacts" class="facts"></div>
+      <div class="controls">
+        <label>Setting <select id="setting"></select></label>
+        <label>Key <select id="transpose"></select></label>
+        <label>Tempo <input id="bpm" type="number" min="40" max="300" step="5"> <span class="eyebrow">bpm</span></label>
+      </div>
+      <div id="dCheck" class="check"></div>
+      <dl id="dCredits" class="credits"></dl>
+
+      <div>
+        <div class="head" style="margin-bottom:8px">
+          <h3 class="eyebrow">Chart</h3>
+          <span class="legend">
+            <span><i style="background:var(--brass)"></i>note</span>
+            <span><i style="background:var(--grace)"></i>cut or tap</span>
+            <span><i style="background:var(--off)"></i>needs half-holing</span>
+            <span><i style="background:var(--ink);width:3px;height:12px"></i>bar</span>
+          </span>
+        </div>
+        <div class="chartwrap"><canvas id="chart"></canvas></div>
+        <p id="dChartInfo" class="hint"></p>
+      </div>
+
+      <div class="controls">
+        <button id="playBtn" class="primary" type="button">Play</button>
+        <select id="player" aria-label="Simulated player"></select>
+        <button id="earBtn" type="button">Send to Whistle Ear</button>
+        <button id="simBtn" type="button">Open in Whistle Sim</button>
+      </div>
+
+      <details>
+        <summary>Edit ABC</summary>
+        <textarea id="edit" rows="12" spellcheck="false" style="margin-top:10px" aria-label="ABC for this setting"></textarea>
+        <div class="controls" style="margin-top:8px">
+          <button id="saveBtn" class="small" type="button">Save changes</button>
+          <button id="delBtn" class="small danger" type="button">Delete this setting</button>
+        </div>
+      </details>
+    </section>
+    <section id="none" class="panel" aria-label="No tune selected">
+      <p class="empty">Paste a tune above, or choose one from the library.</p>
+    </section>
+  </main>
+  <p class="foot">The library is kept in this browser. Use Back up library to save it as a file. Credits come from the ABC's own fields (C: composer, Z: transcriber, S: source).</p>
+</div>
+
+<script type="module">
+import { parseAbc, parseAbcFile } from "./src/abc/abc.js";
+import { checkPlayability, suggestTranspose, describeTranspose } from "./src/abc/playability.js";
+import { buildChart } from "./src/chart/chart.js";
+import { renderAbc, PRESETS, PROFILES } from "./src/sim/whistle-synth.js";
+import { noteName, LOW_D } from "./src/whistle.js";
+const $ = s => document.querySelector(s);
+
+/* ---------- storage ---------- */
+// The library lives in this browser's localStorage; "Back up library" saves it as a file too.
+const STORE = "whistle-hero-library";
+let lib = { tunes: [] };   // tunes: [{ id, abc, title, added, favorite, transpose, bpm }]
+try { const s = JSON.parse(localStorage.getItem(STORE) || "null"); if (s && Array.isArray(s.tunes)) lib = s; } catch (e) {}
+const save = () => { try { localStorage.setItem(STORE, JSON.stringify(lib)); return true; } catch (e) { status("Could not save to this browser's storage. Back up the library to keep your changes."); return false; } };
+const status = msg => { $("#status").textContent = msg; };
+let ui = { sel: null, group: null, search: "", favOnly: false };
+try { Object.assign(ui, JSON.parse(localStorage.getItem(STORE + "-ui") || "{}")); } catch (e) {}
+const saveUi = () => { try { localStorage.setItem(STORE + "-ui", JSON.stringify({ sel: ui.sel, search: ui.search, favOnly: ui.favOnly })); } catch (e) {} };
+
+/* ---------- parsing cache ---------- */
+const cache = new Map();
+function info(t) {
+  const k = t.id + ":" + (t.transpose || 0) + ":" + t.abc.length + ":" + t.abc.slice(-40);
+  if (cache.has(k)) return cache.get(k);
+  const p = parseAbc(t.abc, { transpose: t.transpose || 0 });
+  const r = { parsed: p, check: checkPlayability(p) };
+  cache.set(k, r);
+  return r;
+}
+// Settings of the same tune share a name: "The Kesh", "Kesh, The" and "kesh" group together.
+const norm = s => (s || "untitled").toLowerCase().replace(/,\s*the$/, "").replace(/^the\s+/, "").replace(/[^a-z0-9]+/g, " ").trim();
+function groups() {
+  const m = new Map();
+  for (const t of lib.tunes) { const k = norm(t.title); if (!m.has(k)) m.set(k, []); m.get(k).push(t); }
+  return [...m.entries()].map(([key, tunes]) => ({ key, tunes, title: tunes[0].title || "Untitled", favorite: tunes.some(t => t.favorite) }))
+    .sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: "base" }));
+}
+
+/* ---------- adding tunes ---------- */
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+function addAbc(text, label) {
+  const tunes = parseAbcFile(text);
+  if (!tunes.length) { status("No tunes found. Each tune needs at least a K: (key) line."); return; }
+  let added = 0, dup = 0, first = null;
+  for (const t of tunes) {
+    const abc = t.abc.trim();
+    if (lib.tunes.some(x => x.abc.trim() === abc)) { dup++; continue; }
+    const entry = { id: uid(), abc, title: t.title || "Untitled", added: new Date().toISOString(), favorite: false, transpose: 0, bpm: null };
+    lib.tunes.push(entry); added++; first = first || entry;
+  }
+  save();
+  if (first) { ui.sel = first.id; saveUi(); }
+  render();
+  status(`${label ? label + ": " : ""}added ${added} tune${added === 1 ? "" : "s"}` + (dup ? `, skipped ${dup} already in the library` : "") + ".");
+}
+$("#addBtn").addEventListener("click", () => { const v = $("#paste").value; if (!v.trim()) { status("Paste some ABC first."); return; } addAbc(v); $("#paste").value = ""; });
+$("#fileIn").addEventListener("change", async e => { const f = e.target.files[0]; e.target.value = ""; if (f) addAbc(await f.text(), f.name); });
+$("#exampleBtn").addEventListener("click", () => addAbc(Object.values(PRESETS).map((p, i) => p.abc.startsWith("X:") ? p.abc : `X:${i + 1}\n${p.abc}`).join("\n\n"), "Examples"));
+
+/* ---------- backup ---------- */
+$("#exportBtn").addEventListener("click", () => {
+  const blob = new Blob([JSON.stringify({ app: "whistle-hero", version: 1, exported: new Date().toISOString(), ...lib }, null, 1)], { type: "application/json" });
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+  a.download = `whistle-hero-library-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  status(`Saved ${lib.tunes.length} tune${lib.tunes.length === 1 ? "" : "s"} to a backup file.`);
+});
+$("#importIn").addEventListener("change", async e => {
+  const f = e.target.files[0]; e.target.value = ""; if (!f) return;
+  try {
+    const data = JSON.parse(await f.text());
+    if (!Array.isArray(data.tunes)) throw new Error("not a library backup");
+    let added = 0;
+    for (const t of data.tunes) {
+      if (typeof t.abc !== "string" || lib.tunes.some(x => x.abc.trim() === t.abc.trim())) continue;
+      lib.tunes.push({ id: uid(), abc: t.abc, title: String(t.title || "Untitled"), added: t.added || new Date().toISOString(),
+        favorite: !!t.favorite, transpose: +t.transpose || 0, bpm: +t.bpm || null });
+      added++;
+    }
+    save(); render(); status(`Restored ${added} tune${added === 1 ? "" : "s"} from ${f.name}.`);
+  } catch (err) { status("That file isn't a Tune Library backup."); }
+});
+
+/* ---------- list ---------- */
+$("#search").value = ui.search;
+$("#search").addEventListener("input", e => { ui.search = e.target.value; saveUi(); renderList(); });
+$("#favFilter").addEventListener("click", () => { ui.favOnly = !ui.favOnly; saveUi(); renderList(); });
+function renderList() {
+  const q = ui.search.trim().toLowerCase();
+  const all = groups();
+  const shown = all.filter(g => (!ui.favOnly || g.favorite) && (!q || g.tunes.some(t => {
+    const p = info(t).parsed;
+    return [t.title, ...(p.titles || []), p.meta.rhythm, p.key, p.meter].some(s => (s || "").toLowerCase().includes(q));
+  })));
+  $("#favFilter").setAttribute("aria-pressed", ui.favOnly); $("#favFilter").classList.toggle("primary", ui.favOnly);
+  $("#count").textContent = `${all.length} tune${all.length === 1 ? "" : "s"}` + (lib.tunes.length !== all.length ? ` · ${lib.tunes.length} settings` : "");
+  const list = $("#list"); list.innerHTML = "";
+  if (!shown.length) {
+    const p = document.createElement("p"); p.className = "empty";
+    p.textContent = !lib.tunes.length ? "Nothing here yet. Paste ABC above, open an .abc file, or add the example tunes." : "No tunes match.";
+    list.append(p); return;
+  }
+  for (const g of shown) {
+    const t = g.tunes.find(x => x.id === ui.sel) || g.tunes[0], { parsed: p, check } = info(t);
+    const row = document.createElement("div"); row.className = "row" + (g.tunes.some(x => x.id === ui.sel) ? " sel" : "");
+    row.setAttribute("role", "option"); row.tabIndex = 0;
+    const star = document.createElement("button"); star.type = "button"; star.className = "star" + (g.favorite ? " on" : "");
+    star.textContent = "★"; star.title = g.favorite ? "Remove from favorites" : "Add to favorites"; star.setAttribute("aria-label", star.title);
+    star.addEventListener("click", ev => { ev.stopPropagation(); const on = !g.favorite; g.tunes.forEach(x => x.favorite = on); save(); renderList(); });
+    const name = document.createElement("span"); name.className = "t"; name.textContent = g.title;
+    const meta = document.createElement("span"); meta.className = "m";
+    for (const s of [p.meta.rhythm, p.key, p.meter]) if (s) { const x = document.createElement("span"); x.textContent = s; meta.append(x); }
+    if (g.tunes.length > 1) { const b = document.createElement("span"); b.className = "badge"; b.textContent = `${g.tunes.length} settings`; meta.append(b); }
+    if (!check.ok) { const b = document.createElement("span"); b.className = "badge warn"; b.textContent = check.halfHoles ? "half-holes" : "range"; meta.append(b); }
+    row.append(star, name, meta);
+    const pick = () => { ui.sel = t.id; saveUi(); render(); };
+    row.addEventListener("click", pick);
+    row.addEventListener("keydown", ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); pick(); } });
+    list.append(row);
+  }
+}
+
+/* ---------- detail ---------- */
+for (const [k, p] of Object.entries(PROFILES)) $("#player").append(new Option(p.label, k));
+$("#player").value = "clean";
+const CREDITS = [["composer", "Composer"], ["transcriber", "Transcribed by"], ["source", "Source"], ["origin", "Origin"], ["book", "Book"], ["history", "History"], ["notes", "Notes"]];
+const current = () => lib.tunes.find(t => t.id === ui.sel) || null;
+function renderDetail() {
+  const t = current();
+  $("#detail").hidden = !t; $("#none").hidden = !!t;
+  if (!t) return;
+  const { parsed: p, check } = info(t);
+  const group = lib.tunes.filter(x => norm(x.title) === norm(t.title));
+  $("#dTitle").textContent = t.title;
+  $("#dAlt").textContent = p.titles.length > 1 ? "Also known as " + p.titles.slice(1).join(", ") : "";
+  const facts = $("#dFacts"); facts.innerHTML = "";
+  const chart = buildChart(p, { bpm: t.bpm });
+  for (const [k, v] of [["Type", p.meta.rhythm], ["Key", p.key + (t.transpose ? ` → ${describeTranspose(t.transpose)}` : "")], ["Meter", p.meter], ["Parts", String(p.parts)],
+                        ["Length", `${p.bars.length} bars · ${chart.notes.length} notes`]]) {
+    if (!v) continue; const s = document.createElement("span"); s.append(k + " "); const b = document.createElement("b"); b.textContent = v; s.append(b); facts.append(s);
+  }
+  // settings
+  const sel = $("#setting"); sel.innerHTML = "";
+  group.forEach((x, i) => sel.append(new Option(`Setting ${i + 1}` + (x.abc.match(/^K:\s*(.*)$/m) ? ` · ${x.abc.match(/^K:\s*(.*)$/m)[1].trim()}` : ""), x.id)));
+  sel.value = t.id; sel.disabled = group.length < 2;
+  // key / transposition
+  const tr = $("#transpose"); tr.innerHTML = "";
+  for (let k = -6; k <= 6; k++) tr.append(new Option(k ? describeTranspose(k) : "As written", k));
+  tr.value = t.transpose || 0;
+  $("#bpm").value = Math.round(chart.qpm);
+  // playability
+  renderCheck(t, check);
+  // credits
+  const dl = $("#dCredits"); dl.innerHTML = "";
+  for (const [k, label] of CREDITS) {
+    if (!p.meta[k]) continue;
+    const dt = document.createElement("dt"); dt.textContent = label; const dd = document.createElement("dd"); dd.textContent = p.meta[k]; dl.append(dt, dd);
+  }
+  if (!dl.children.length) { const dt = document.createElement("dt"); dt.textContent = "Credits"; const dd = document.createElement("dd"); dd.textContent = "None in the ABC. Add C: (composer), Z: (transcriber) or S: (source) lines to credit the tune."; dl.append(dt, dd); }
+  $("#edit").value = t.abc;
+  drawChart(chart, check);
+  const orn = chart.ornaments.length, rolls = chart.notes.filter(n => n.ornament === "roll").length;
+  $("#dChartInfo").textContent = `${chart.duration.toFixed(1)} s at ${Math.round(chart.qpm)} bpm · ${chart.notes.length} notes · ${orn} cuts and taps (${rolls} roll${rolls === 1 ? "" : "s"}) · repeats played out` + (p.warnings.length ? ` · ${p.warnings.join(" · ")}` : "");
+}
+function renderCheck(t, check) {
+  const box = $("#dCheck"); box.innerHTML = ""; box.className = "check " + (check.ok ? "good" : "bad");
+  const head = document.createElement("p");
+  if (check.ok) head.textContent = "Fits the D whistle" + (t.transpose ? ` (${describeTranspose(t.transpose)})` : "") + ".";
+  else head.textContent = "Needs work on a D whistle" + (t.transpose ? ` even ${describeTranspose(t.transpose)}` : "") + ":";
+  box.append(head);
+  const items = [];
+  for (const i of check.issues) {
+    const where = `first in bar ${i.bar + 1}` + (i.count > 1 ? `, ${i.count} times` : "");
+    if (i.kind === "half-hole") items.push(`${i.name} needs half-holing (${where})`);
+    if (i.kind === "below") items.push(`${i.name} is below low D and will be played an octave up (${where})`);
+    if (i.kind === "above") items.push(`${i.name} is above the range and will be played an octave down (${where})`);
+    if (i.kind === "high") items.push(`${i.name} is in the hard third octave (${where})`);
+  }
+  if (check.cNaturals) items.push(`${check.cNaturals} C♮ (cross-fingered, playable)`);
+  if (items.length) { const ul = document.createElement("ul"); for (const s of items) { const li = document.createElement("li"); li.textContent = s; ul.append(li); } box.append(ul); }
+  // suggest a transposition from the as-written tune
+  const sug = suggestTranspose(t.abc);
+  if (sug && sug.transpose !== (t.transpose || 0) && !(check.ok && !check.highNotes)) {
+    const p = document.createElement("p"); p.className = "controls";
+    p.append(`Easier ${describeTranspose(sug.transpose)}: ` + (sug.check.ok ? "no half-holes" : `${sug.check.halfHoles} half-holed notes`) + ". ");
+    const b = document.createElement("button"); b.type = "button"; b.className = "small"; b.textContent = `Play it ${describeTranspose(sug.transpose)}`;
+    b.addEventListener("click", () => { t.transpose = sug.transpose; save(); render(); status(`${t.title} will be played ${describeTranspose(sug.transpose)}.`); });
+    p.append(b); box.append(p);
+  }
+}
+$("#setting").addEventListener("change", e => { ui.sel = e.target.value; saveUi(); render(); });
+$("#transpose").addEventListener("change", e => { const t = current(); t.transpose = +e.target.value; save(); render(); });
+$("#bpm").addEventListener("change", e => { const t = current(); const v = +e.target.value; t.bpm = v >= 40 && v <= 300 ? v : null; save(); renderDetail(); });
+$("#saveBtn").addEventListener("click", () => {
+  const t = current(), v = $("#edit").value.trim();
+  const p = parseAbc(v);
+  if (!p.events.some(e => e.t === "note")) { status("That ABC has no notes, so it wasn't saved."); return; }
+  t.abc = v; t.title = p.title || t.title; save(); render(); status("Saved.");
+});
+$("#delBtn").addEventListener("click", () => {
+  const t = current(); if (!t) return;
+  const i = lib.tunes.indexOf(t); lib.tunes.splice(i, 1);
+  const same = lib.tunes.find(x => norm(x.title) === norm(t.title));
+  ui.sel = same ? same.id : null; saveUi(); save(); render();
+  status(`Deleted a setting of ${t.title}. Restore from a backup if that was a mistake.`);
+});
+
+/* ---------- chart drawing ---------- */
+let C = {};
+function readTokens() { const cs = getComputedStyle(document.documentElement); for (const k of ["ink", "muted", "line", "brass", "grace", "off", "trace-bg", "brass-soft"]) C[k] = cs.getPropertyValue("--" + k).trim(); }
+readTokens();
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { readTokens(); renderDetail(); });
+const M_TOP = 98.6, M_BOT = 73.4, SCALE_PC = [0, 2, 4, 5, 7, 9, 10, 11], PX_PER_S = 110;
+let drawn = null;
+function drawChart(chart, check, cursor = null) {
+  drawn = { chart, check };
+  const cv = $("#chart"), wrap = cv.parentElement, dpr = devicePixelRatio || 1;
+  const L = 40, R = 16, T = 22, B = 22, H = 300;
+  const W = Math.max(wrap.clientWidth, Math.ceil(L + R + chart.duration * PX_PER_S));
+  cv.style.width = W + "px";
+  if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
+  const g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.fillStyle = C["trace-bg"]; g.fillRect(0, 0, W, H);
+  const ph = H - T - B, x = t => L + t * PX_PER_S, y = m => T + (M_TOP - m) / (M_TOP - M_BOT) * ph;
+  const mono = getComputedStyle(document.body).getPropertyValue("--f-mono") || "monospace";
+  // lanes
+  g.textAlign = "right"; g.textBaseline = "middle";
+  for (let m = LOW_D; m <= 98; m++) {
+    const pc = (m - LOW_D) % 12; if (!SCALE_PC.includes(pc)) continue;
+    const yy = Math.round(y(m)) + 0.5, isD = pc === 0;
+    g.strokeStyle = C.line; g.lineWidth = isD ? 1.2 : 0.6; g.setLineDash(pc === 10 ? [3, 4] : []);
+    g.beginPath(); g.moveTo(L, yy); g.lineTo(W - R, yy); g.stroke();
+    if (pc !== 10) { g.fillStyle = isD ? C.ink : C.muted; g.font = (isD ? "600 " : "") + "10px " + mono; g.fillText(noteName(m), L - 6, yy); }
+  }
+  g.setLineDash([]);
+  // beats, bars, part labels
+  for (const b of chart.beats) { g.strokeStyle = C.line; g.globalAlpha = 0.55; g.beginPath(); g.moveTo(Math.round(x(b.t)) + 0.5, T); g.lineTo(Math.round(x(b.t)) + 0.5, T + ph); g.stroke(); }
+  g.globalAlpha = 1; g.textAlign = "left"; g.textBaseline = "alphabetic";
+  let lastPart = -1, lastPass = 1;
+  for (const b of chart.bars) {
+    const xx = Math.round(x(b.t)) + 0.5;
+    g.strokeStyle = C.ink; g.globalAlpha = b.pickup ? 0.2 : 0.45; g.lineWidth = 1; g.beginPath(); g.moveTo(xx, T); g.lineTo(xx, T + ph); g.stroke(); g.globalAlpha = 1;
+    g.fillStyle = C.muted; g.font = "10px " + mono; if (!b.pickup) g.fillText(String(b.bar + (chart.bars[0].pickup ? 0 : 1)), xx + 3, T + ph + 15);
+    if (b.part !== lastPart || b.pass !== lastPass) {
+      g.fillStyle = C.ink; g.font = "600 12px " + mono;
+      g.fillText(String.fromCharCode(65 + b.part) + (b.pass === 2 ? " (repeat)" : ""), xx + 3, T - 7);
+      lastPart = b.part; lastPass = b.pass;
+    }
+  }
+  // notes
+  const off = new Set(check.issues.filter(i => i.kind === "half-hole").map(i => i.midi));
+  for (const n of chart.notes) {
+    const x0 = x(n.t) + 1, x1 = Math.max(x(n.t + n.dur) - 1, x0 + 3), yy = y(n.midi);
+    g.fillStyle = off.has(n.midi) ? C.off : C.brass; g.globalAlpha = 0.92;
+    g.beginPath(); g.roundRect ? g.roundRect(x0, yy - 4.5, x1 - x0, 9, 3) : g.rect(x0, yy - 4.5, x1 - x0, 9); g.fill(); g.globalAlpha = 1;
+    if (n.ornament === "slide") { g.strokeStyle = C.brass; g.lineWidth = 2; g.beginPath(); g.moveTo(x0 - 10, yy + 9); g.lineTo(x0, yy); g.stroke(); }
+    if (!n.slurred) { g.fillStyle = C.ink; g.fillRect(x0 - 1, yy - 6, 2, 12); }
+  }
+  for (const o of chart.ornaments) {
+    const yy = y(o.midi), xx = x(o.t);
+    g.fillStyle = off.has(o.midi) ? C.off : C.grace; g.fillRect(xx, yy - 3.5, Math.max(4, o.dur * PX_PER_S), 7);
+  }
+  if (cursor != null) { const xx = Math.round(x(cursor)) + 0.5; g.strokeStyle = C.ink; g.lineWidth = 1.5; g.beginPath(); g.moveTo(xx, T); g.lineTo(xx, T + ph); g.stroke();
+    if (xx < wrap.scrollLeft + 60 || xx > wrap.scrollLeft + wrap.clientWidth - 60) wrap.scrollLeft = xx - 80; }
+}
+addEventListener("resize", () => { if (drawn) drawChart(drawn.chart, drawn.check); });
+
+/* ---------- playback and hand-off ---------- */
+let play = null;
+function stop() { if (!play) return; try { play.src.stop(); } catch (e) {} play.ctx.close(); play = null; $("#playBtn").textContent = "Play"; $("#playBtn").classList.remove("live"); if (drawn) drawChart(drawn.chart, drawn.check); }
+function render1(t) { return renderAbc(t.abc, { profile: $("#player").value, transpose: t.transpose || 0, bpm: t.bpm || buildChart(info(t).parsed).qpm }); }
+$("#playBtn").addEventListener("click", () => {
+  if (play) { stop(); return; }
+  const t = current(); if (!t) return;
+  const r = render1(t);
+  const ctx = new AudioContext({ sampleRate: r.sr });
+  const b = ctx.createBuffer(1, r.samples.length, r.sr); b.copyToChannel(r.samples, 0);
+  const src = ctx.createBufferSource(); src.buffer = b; src.connect(ctx.destination);
+  src.onended = () => { if (play && play.src === src) stop(); };
+  const lead = r.truth.notes.length ? r.truth.notes[0].start : 0.4; // the synth starts after a short lead-in
+  src.start(); play = { ctx, src, t0: ctx.currentTime + lead };
+  $("#playBtn").textContent = "Stop"; $("#playBtn").classList.add("live");
+  const tick = () => { if (!play) return; drawChart(drawn.chart, drawn.check, play.ctx.currentTime - play.t0); requestAnimationFrame(tick); };
+  requestAnimationFrame(tick);
+});
+let bc = null, earSeen = -Infinity, pending = null;
+try {
+  bc = new BroadcastChannel("whistle-hero");
+  bc.onmessage = e => { const m = e.data || {}; if (m.type === "pong" || m.type === "ready") { earSeen = performance.now(); if (pending) { bc.postMessage(pending); pending = null; status("Sent to Whistle Ear."); } } };
+  bc.postMessage({ type: "ping" }); setInterval(() => bc.postMessage({ type: "ping" }), 2000);
+} catch (e) { $("#earBtn").disabled = true; }
+$("#earBtn").addEventListener("click", () => {
+  const t = current(); if (!t || !bc) return;
+  const r = render1(t);
+  const msg = { type: "clip", samples: r.samples, sr: r.sr, truth: r.truth, label: `Library · ${t.title} · ${PROFILES[$("#player").value].label}` };
+  if (performance.now() - earSeen < 4500) { bc.postMessage(msg); status("Sent to Whistle Ear. Switch to its tab."); }
+  else { pending = msg; window.open("whistle-ear.html", "whistle-ear"); status("Opening Whistle Ear…"); }
+});
+$("#simBtn").addEventListener("click", () => {
+  const t = current(); if (!t) return;
+  try {
+    const s = JSON.parse(localStorage.getItem("whistle-sim-state") || "{}");
+    localStorage.setItem("whistle-sim-state", JSON.stringify({ ...s, abc: t.abc, preset: "custom" }));
+  } catch (e) {}
+  window.open("whistle-sim.html", "whistle-sim");
+});
+
+function render() { stop(); renderList(); renderDetail(); }
+if (!current() && lib.tunes.length) ui.sel = groups()[0].tunes[0].id;
+render();
+</script>
+</body>
+</html>

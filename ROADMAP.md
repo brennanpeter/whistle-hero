@@ -28,13 +28,17 @@ Rough order of work for Whistle Hero. Each phase leans on the one before it. Che
 - [ ] **Adaptive noise gate.** Measure room noise for a second before playing.
 - [ ] **Whistle tuning calibration.** Detect each whistle's offset from a held low D, rather than relying on the reference-pitch slider.
 
-## Phase 2: Tunes from The Session
+## Phase 2: Tunes (paste your own ABC)
 
-- [ ] Import by tune URL or ID through The Session's JSON API (`?format=json`). Check CORS first; pasting ABC is the fallback.
-- [ ] Choose between a tune's settings, and flag notes that need half-holing on a D whistle (anything outside D major plus C♮)
-- [ ] Build game charts from the parsed ABC: repeats and endings expanded, ornaments kept as scorable events
-- [ ] A starter library of well-known session tunes, plus favorites saved locally
-- [ ] Credit the tune, its setting and the transcriber, with a link back to The Session
+Tunes come in as ABC the player pastes or opens. The project doesn't download from tune sites: The Session's data license forbids processing it with AI tools, and AI tools are used to build this project. So nothing from The Session is fetched, bundled or used in tests. Players can still paste ABC from anywhere they're allowed to use it.
+
+- [x] Paste one tune or a whole `.abc` file; every tune with an `X:` line is added, and file-header fields apply to all of them
+- [x] Keep the tune's own credits: titles and alternative names, composer (`C:`), transcriber (`Z:`), source (`S:`), origin, notes, rhythm
+- [x] Group tunes with the same name as settings, and choose between them
+- [x] Flag notes that need half-holing on a D whistle (C♮ counts as playable), notes outside the range, and hard third-octave notes, with the bar where each first appears
+- [x] Suggest the easiest transposition (−6 to +6 semitones) and play a tune in that key
+- [x] Build game charts from the parsed ABC (`src/chart/chart.js`): repeats and endings played out, parts and passes labelled, bars and a beat grid (pickups included), and cuts, taps and rolls as timed, scorable events
+- [x] Tune Library page: search, favorites, edit, delete, chart preview, play with the simulator, send to Whistle Ear, back up and restore as a file
 
 ## Phase 3: Core gameplay (three.js)
 

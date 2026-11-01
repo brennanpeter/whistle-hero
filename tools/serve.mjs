@@ -36,4 +36,5 @@ http.createServer((req, res) => {
   console.log(`Whistle Hero dev server: http://localhost:${port}/`);
   console.log(`  Whistle Ear  http://localhost:${port}/whistle-ear.html`);
   console.log(`  Whistle Sim  http://localhost:${port}/whistle-sim.html`);
+  console.log(`  Tune Library http://localhost:${port}/tunes.html`);
 });
