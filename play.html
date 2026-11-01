@@ -143,6 +143,12 @@ a{color:var(--brass)}
       </div>
       <div class="row" id="simOpts" hidden>
         <select id="profile" aria-label="Simulated player"></select>
+        <select id="simArtic" aria-label="Simulated player's articulation">
+          <option value="cuts">Legato: cuts and taps on repeats</option>
+          <option value="legato">Legato: tongue only repeats</option>
+          <option value="abc">Tongue each note unless slurred</option>
+          <option value="tongued">Tongue every note</option>
+        </select>
         <label class="row"><input type="checkbox" id="monitor" checked> Hear it</label>
       </div>
       <span class="hint" id="inputHint">Play on your whistle. Use headphones if you add backing sound later, so the game hears only you.</span>
@@ -209,7 +215,7 @@ const $ = s => document.querySelector(s);
 
 /* ---------- preferences ---------- */
 const PREFS = "whistle-hero-play";
-let prefs = { tune: null, speed: 100, input: "mic", profile: "typical", monitor: true, latency: 0, mode: "fingers", loop: "off", halos: true };
+let prefs = { tune: null, speed: 100, input: "mic", profile: "typical", monitor: true, latency: 0, mode: "fingers", loop: "off", halos: true, simArtic: "cuts" };
 try { Object.assign(prefs, JSON.parse(localStorage.getItem(PREFS) || "{}")); } catch (e) {}
 const savePrefs = () => { try { localStorage.setItem(PREFS, JSON.stringify(prefs)); } catch (e) {} };
 const urlTune = new URLSearchParams(location.search).get("tune");
@@ -258,7 +264,8 @@ function setHalos(on) {
 $("#halos").addEventListener("change", e => setHalos(e.target.checked));
 $("#halosP").addEventListener("change", e => setHalos(e.target.checked));
 for (const [k, p] of Object.entries(PROFILES)) $("#profile").append(new Option(p.label, k));
-$("#profile").value = prefs.profile; $("#monitor").checked = prefs.monitor; $("#latency").value = prefs.latency;
+$("#profile").value = prefs.profile; $("#simArtic").value = prefs.simArtic; $("#monitor").checked = prefs.monitor;
+$("#simArtic").addEventListener("change", e => { prefs.simArtic = e.target.value; savePrefs(); }); $("#latency").value = prefs.latency;
 $("#speed").value = prefs.speed;
 const showSpeed = () => {
   const t = lib.tunes.find(x => x.id === prefs.tune);
@@ -365,7 +372,7 @@ function appendPass() {
 }
 // the simulated player plays each pass from its own rendering, lined up on the game clock
 function scheduleSim(p) {
-  const r = renderAbc(S.tune.abc, { profile: prefs.profile, bpm: p.bpm, transpose: S.tune.transpose || 0, seed: 1 + Math.floor(Math.random() * 9999) });
+  const r = renderAbc(S.tune.abc, { profile: prefs.profile, articulation: prefs.simArtic, bpm: p.bpm, transpose: S.tune.transpose || 0, seed: 1 + Math.floor(Math.random() * 9999) });
   const ctx = S.ctx, buf = ctx.createBuffer(1, r.samples.length, r.sr); buf.copyToChannel(r.samples, 0);
   const src = ctx.createBufferSource(); src.buffer = buf;
   // Each pass is rendered on its own, so the simulated player stops the air for 30 ms where one pass

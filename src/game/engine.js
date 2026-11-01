@@ -11,6 +11,7 @@
 
 export const WINDOWS = { perfect: 0.045, good: 0.09, ok: 0.14 }; // seconds either side of the note
 export const ORNAMENT_WINDOW = 0.1;
+export const GRACE_LEAD = 0.08; // an unwritten cut or tap this soon before a note counts as its start
 export const POINTS = { perfect: 100, good: 70, ok: 40, ornament: 50 };
 const MAX_MULTIPLIER = 4, COMBO_STEP = 10;
 
@@ -48,22 +49,66 @@ export function createGame(chart) {
       if (n.midi === midi && (!best || Math.abs(dt) < Math.abs(t - effectiveTime(best)))) best = n;
     }
     if (best) {
-      const dt = t - effectiveTime(best), g = grade(dt);
-      best.result = g; best.offset = dt;
+      let dt = t - effectiveTime(best);
+      // An unwritten cut or tap heard just before this note started it, whether the detector
+      // reported it as a grace note or (when it lasted a few frames) as a note of its own.
+      for (const lead of [lastGrace, pendingWrong]) {
+        if (!lead || lead.midi === midi || t - lead.t <= 0 || t - lead.t > GRACE_LEAD) continue;
+        const dg = lead.t - effectiveTime(best);
+        if (Math.abs(dg) < Math.abs(dt)) dt = dg;
+      }
+      if (pendingWrong && t - pendingWrong.t <= GRACE_LEAD) pendingWrong = null; // it was the cut, not a wrong note
+      flushWrong();
+      lastGrace = null;
+      const g = grade(dt);
+      best.result = g; best.offset = dt; best.hitT = t;
       state.counts[g]++; state.offsets.push(dt);
       state.combo++; state.maxCombo = Math.max(state.maxCombo, state.combo);
       state.multiplier = Math.min(MAX_MULTIPLIER, 1 + Math.floor(state.combo / COMBO_STEP));
       const points = POINTS[g] * state.multiplier;
       state.score += points; state.lastJudged = best.id;
+      best.points = points; best.mult = state.multiplier; best.offsetIndex = state.offsets.length - 1;
+      recentHits.push(best); if (recentHits.length > 4) recentHits.shift();
       emit({ type: "hit", note: best, grade: g, offset: dt, points, t });
       return best;
     }
     if (nearest) {
       // A wrong note is shown but doesn't break the combo: the player may still correct it inside
       // the window, and the detector's occasional transient shouldn't cost them their streak.
-      state.counts.wrong++;
-      const octave = (midi - nearest.midi) % 12 === 0;
-      emit({ type: "wrong", note: nearest, midi, octave, t });
+      // It is held back for GRACE_LEAD first: if the right note follows that quickly, it was a cut
+      // or tap starting that note.
+      flushWrong();
+      pendingWrong = { midi, t, note: nearest };
+    }
+    return null;
+  }
+
+  // A cut or tap the player adds on the beat (articulating a repeated note, say) is the start of the
+  // note that follows it. The detector reports it only after that note has begun, so a note already
+  // judged slightly late is re-timed from the grace note when that's closer to the beat.
+  const recentHits = [];
+  let lastGrace = null, pendingWrong = null;
+  function flushWrong() {
+    if (!pendingWrong) return;
+    const w = pendingWrong; pendingWrong = null;
+    state.counts.wrong++;
+    emit({ type: "wrong", note: w.note, midi: w.midi, octave: (w.midi - w.note.midi) % 12 === 0, t: w.t });
+  }
+  function retime(midi, t) {
+    for (const n of recentHits) {
+      const lead = n.hitT - t;
+      if (n.midi === midi || lead <= 0 || lead > GRACE_LEAD) continue;
+      const dt = t - effectiveTime(n);
+      if (Math.abs(dt) >= Math.abs(n.offset)) continue;
+      const g = grade(dt); if (!g) continue;
+      state.counts[n.result]--; state.counts[g]++;
+      const points = POINTS[g] * n.mult;
+      state.score += points - n.points;
+      state.offsets[n.offsetIndex] = dt;
+      const from = n.result;
+      n.result = g; n.offset = dt; n.points = points;
+      emit({ type: "regrade", note: n, from, grade: g, offset: dt, t });
+      return n;
     }
     return null;
   }
@@ -76,7 +121,7 @@ export function createGame(chart) {
       if (o.result || o.midi !== midi || Math.abs(o.t - t) > ORNAMENT_WINDOW) continue;
       if (!best || Math.abs(o.t - t) < Math.abs(best.t - t)) best = o;
     }
-    if (!best) return null;
+    if (!best) { lastGrace = { midi, t }; return retime(midi, t); }
     best.result = "hit"; state.ornamentsHit++;
     const points = POINTS.ornament * state.multiplier;
     state.score += points;
@@ -85,6 +130,7 @@ export function createGame(chart) {
   }
 
   function tick(t) {
+    if (pendingWrong && t > pendingWrong.t + GRACE_LEAD) flushWrong();
     while (sweep < notes.length && (notes[sweep].result || effectiveTime(notes[sweep]) + WINDOWS.ok < t)) {
       const n = notes[sweep];
       if (!n.result) {
