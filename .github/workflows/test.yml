@@ -16,3 +16,5 @@
            with:
              node-version: ${{ matrix.node }}
          - run: npm test
+		 - run: npm ci
+		 - run: npm run build

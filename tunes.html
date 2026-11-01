@@ -40,6 +40,7 @@ button:hover,.btn:hover,select:hover{border-color:var(--muted)}
 button:focus-visible,select:focus-visible,input:focus-visible,textarea:focus-visible,.btn:focus-within{outline:2px solid var(--brass);outline-offset:2px}
 button.primary{background:var(--ink);color:var(--bg);border-color:var(--ink)}
 button.primary.live{background:var(--off);border-color:var(--off);color:#fff}
+.btn.primary{background:var(--ink);color:var(--bg);border-color:var(--ink);text-decoration:none}
 button.small,.btn.small{padding:6px 10px;font-size:13px}
 button.danger{color:var(--off)}
 button:disabled{opacity:.45;cursor:default}
@@ -171,7 +172,8 @@ details summary{cursor:pointer;font-weight:500}
       </div>
 
       <div class="controls">
-        <button id="playBtn" class="primary" type="button">Play</button>
+        <a id="gameBtn" class="btn primary" href="play.html">Play in the game</a>
+        <button id="playBtn" type="button">Listen</button>
         <select id="player" aria-label="Simulated player"></select>
         <button id="earBtn" type="button">Send to Whistle Ear</button>
         <button id="simBtn" type="button">Open in Whistle Sim</button>
@@ -199,14 +201,13 @@ import { checkPlayability, suggestTranspose, describeTranspose } from "./src/abc
 import { buildChart } from "./src/chart/chart.js";
 import { renderAbc, PRESETS, PROFILES } from "./src/sim/whistle-synth.js";
 import { noteName, LOW_D } from "./src/whistle.js";
+import { STORE, loadLibrary, saveLibrary, normTitle as norm, groupTunes } from "./src/library.js";
 const $ = s => document.querySelector(s);
 
 /* ---------- storage ---------- */
 // The library lives in this browser's localStorage; "Back up library" saves it as a file too.
-const STORE = "whistle-hero-library";
-let lib = { tunes: [] };   // tunes: [{ id, abc, title, added, favorite, transpose, bpm }]
-try { const s = JSON.parse(localStorage.getItem(STORE) || "null"); if (s && Array.isArray(s.tunes)) lib = s; } catch (e) {}
-const save = () => { try { localStorage.setItem(STORE, JSON.stringify(lib)); return true; } catch (e) { status("Could not save to this browser's storage. Back up the library to keep your changes."); return false; } };
+let lib = loadLibrary();   // tunes: [{ id, abc, title, added, favorite, transpose, bpm, best }]
+const save = () => saveLibrary(lib) || (status("Could not save to this browser's storage. Back up the library to keep your changes."), false);
 const status = msg => { $("#status").textContent = msg; };
 let ui = { sel: null, group: null, search: "", favOnly: false };
 try { Object.assign(ui, JSON.parse(localStorage.getItem(STORE + "-ui") || "{}")); } catch (e) {}
@@ -222,14 +223,7 @@ function info(t) {
   cache.set(k, r);
   return r;
 }
-// Settings of the same tune share a name: "The Kesh", "Kesh, The" and "kesh" group together.
-const norm = s => (s || "untitled").toLowerCase().replace(/,\s*the$/, "").replace(/^the\s+/, "").replace(/[^a-z0-9]+/g, " ").trim();
-function groups() {
-  const m = new Map();
-  for (const t of lib.tunes) { const k = norm(t.title); if (!m.has(k)) m.set(k, []); m.get(k).push(t); }
-  return [...m.entries()].map(([key, tunes]) => ({ key, tunes, title: tunes[0].title || "Untitled", favorite: tunes.some(t => t.favorite) }))
-    .sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: "base" }));
-}
+const groups = () => groupTunes(lib);
 
 /* ---------- adding tunes ---------- */
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -353,6 +347,7 @@ function renderDetail() {
   }
   if (!dl.children.length) { const dt = document.createElement("dt"); dt.textContent = "Credits"; const dd = document.createElement("dd"); dd.textContent = "None in the ABC. Add C: (composer), Z: (transcriber) or S: (source) lines to credit the tune."; dl.append(dt, dd); }
   $("#edit").value = t.abc;
+  $("#gameBtn").href = "play.html?tune=" + encodeURIComponent(t.id);
   drawChart(chart, check);
   const orn = chart.ornaments.length, rolls = chart.notes.filter(n => n.ornament === "roll").length;
   $("#dChartInfo").textContent = `${chart.duration.toFixed(1)} s at ${Math.round(chart.qpm)} bpm · ${chart.notes.length} notes · ${orn} cuts and taps (${rolls} roll${rolls === 1 ? "" : "s"}) · repeats played out` + (p.warnings.length ? ` · ${p.warnings.join(" · ")}` : "");
@@ -462,7 +457,7 @@ addEventListener("resize", () => { if (drawn) drawChart(drawn.chart, drawn.check
 
 /* ---------- playback and hand-off ---------- */
 let play = null;
-function stop() { if (!play) return; try { play.src.stop(); } catch (e) {} play.ctx.close(); play = null; $("#playBtn").textContent = "Play"; $("#playBtn").classList.remove("live"); if (drawn) drawChart(drawn.chart, drawn.check); }
+function stop() { if (!play) return; try { play.src.stop(); } catch (e) {} play.ctx.close(); play = null; $("#playBtn").textContent = "Listen"; $("#playBtn").classList.remove("live"); if (drawn) drawChart(drawn.chart, drawn.check); }
 function render1(t) { return renderAbc(t.abc, { profile: $("#player").value, transpose: t.transpose || 0, bpm: t.bpm || buildChart(info(t).parsed).qpm }); }
 $("#playBtn").addEventListener("click", () => {
   if (play) { stop(); return; }

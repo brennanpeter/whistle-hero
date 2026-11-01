@@ -37,7 +37,8 @@ test("rolls and grace notes become ornament events", () => {
   assert.equal(roll.ornament, "roll");
   assert.deepEqual(c.ornaments.map(o => [o.kind, o.midi, o.note]), [["cut", cutFor(79), 0], ["tap", tapFor(79), 0], ["cut", 93, 1]]);
   assert.ok(close(c.ornaments[0].t, roll.dur / 3));
-  assert.ok(c.ornaments[2].t < graced.t, "a grace note sits just before its note");
+  assert.ok(Math.abs(c.ornaments[2].t - graced.t) < 1e-9, "a grace note is played on the beat");
+  assert.ok(graced.expect > graced.t && roll.expect === roll.t, "the main pitch is expected after the cut");
 });
 
 test("low D rolls use two cuts", () => {

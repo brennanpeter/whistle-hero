@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Whistle Hero</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;800&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* The game is played on a dark stage whatever the system theme; panels use the bench palette's dark tokens. */
+:root{
+  --bg:#0D1210; --surface:#171E1B; --ink:#E2E8E4; --muted:#91A199; --line:#2B3732;
+  --brass:#DAAB4F; --brass-soft:#3B311F; --grace:#5FBBB1; --off:#E36B5D; --ok:#62BE7D;
+  --f-display:"Big Shoulders Display","Arial Narrow",Impact,sans-serif;
+  --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.5;overflow:hidden}
+button,select,.btn{font:500 14px/1 var(--f-body);color:var(--ink);background:var(--surface);border:1px solid var(--line);
+  border-radius:6px;padding:10px 14px;cursor:pointer;display:inline-flex;align-items:center;gap:8px;white-space:nowrap;text-decoration:none}
+select{padding:8px 10px;max-width:100%}
+button:hover,.btn:hover,select:hover{border-color:var(--muted)}
+button:focus-visible,select:focus-visible,input:focus-visible,a:focus-visible{outline:2px solid var(--brass);outline-offset:2px}
+button.primary{background:var(--brass);color:#16201D;border-color:var(--brass);font-weight:600}
+button:disabled{opacity:.45;cursor:default}
+input[type=range]{accent-color:var(--brass);width:100%}
+input[type=number]{font:14px var(--f-mono);color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:7px 8px;width:90px}
+
+#stage{position:fixed;inset:0}
+/* HUD */
+.hud{position:fixed;left:0;right:0;top:0;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;
+  padding:max(12px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) 0 max(16px,env(safe-area-inset-left));pointer-events:none}
+.hud .block{display:flex;flex-direction:column;gap:2px}
+.hud .label{font:500 11px var(--f-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.hud .score{font:800 40px/1 var(--f-display);font-variant-numeric:tabular-nums}
+.hud .combo{font:600 18px var(--f-mono);font-variant-numeric:tabular-nums}
+.hud .mult{color:var(--brass)}
+.hud .right{text-align:right;align-items:flex-end}
+.hud .tune{font:800 22px/1 var(--f-display);text-transform:uppercase;letter-spacing:.02em;max-width:40vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.progress{position:fixed;left:0;right:0;top:0;height:3px;background:var(--line);pointer-events:none}
+.progress i{display:block;height:100%;width:0;background:var(--brass)}
+.judge{position:fixed;left:50%;top:24%;transform:translateX(-50%);font:800 44px/1 var(--f-display);text-transform:uppercase;letter-spacing:.04em;
+  pointer-events:none;opacity:0;transition:opacity .25s, transform .25s;text-shadow:0 2px 12px rgba(0,0,0,.6)}
+.judge.show{opacity:1;transform:translateX(-50%) translateY(-6px);transition:none}
+.judge small{display:block;text-align:center;font:500 14px var(--f-mono);letter-spacing:.02em;text-transform:none;color:var(--muted);margin-top:4px}
+.heard{position:fixed;left:50%;top:max(14px,env(safe-area-inset-top));transform:translateX(-50%);font:500 13px var(--f-mono);color:var(--muted);
+  background:rgba(13,18,16,.7);padding:6px 12px;border-radius:6px;pointer-events:none;white-space:nowrap}
+.heard b{font:800 22px/1 var(--f-display);color:var(--ink);margin-left:6px;vertical-align:-2px}
+.count{position:fixed;inset:0;display:grid;place-items:center;font:800 140px/1 var(--f-display);color:var(--brass);pointer-events:none;text-shadow:0 4px 24px rgba(0,0,0,.6)}
+.pausebtn{position:fixed;right:max(16px,env(safe-area-inset-right));bottom:max(14px,env(safe-area-inset-bottom))}
+
+/* panels */
+.overlay{position:fixed;inset:0;display:grid;place-items:center;padding:16px;background:rgba(8,11,10,.82);overflow-y:auto}
+.card{width:min(560px,100%);background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:22px;display:flex;flex-direction:column;gap:16px;margin:auto}
+.card h1{margin:0;font:800 46px/.95 var(--f-display);text-transform:uppercase;letter-spacing:.01em}
+.card h2{margin:0;font:800 30px/1 var(--f-display);text-transform:uppercase}
+.card p{margin:0}
+.muted{color:var(--muted)}
+.field{display:flex;flex-direction:column;gap:6px}
+.field>label,.field>.lab{font-weight:500;display:flex;justify-content:space-between;gap:8px}
+.field output{font:13px var(--f-mono);color:var(--brass)}
+.field .hint{font-size:13px;color:var(--muted)}
+.seg{display:flex;gap:6px;flex-wrap:wrap}
+.seg button[aria-pressed=true]{border-color:var(--brass);background:var(--brass-soft)}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px}
+.stat{background:var(--bg);border-radius:8px;padding:10px 12px}
+.stat b{display:block;font:800 28px/1 var(--f-display);font-variant-numeric:tabular-nums}
+.stat span{font:500 11px var(--f-mono);letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.stars{font-size:34px;letter-spacing:4px;color:var(--brass)}
+.stars .off{color:var(--line)}
+.note{font-size:14px;background:var(--bg);border-radius:8px;padding:10px 12px}
+a{color:var(--brass)}
+@media (max-width:520px){.hud .score{font-size:30px}.judge{font-size:34px}.card h1{font-size:38px}.heard{top:auto;bottom:max(14px,env(safe-area-inset-bottom));left:16px;transform:none}.hud .tune{max-width:45vw;font-size:18px}}
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div class="progress" id="progress" hidden><i></i></div>
+<div class="hud" id="hud" hidden>
+  <div class="block"><span class="label">Score</span><span class="score" id="score">0</span><span class="combo"><span id="combo">0</span> combo <span class="mult" id="mult"></span></span></div>
+  <div class="block right"><span class="tune" id="hudTune"></span><span class="label" id="hudInfo"></span><span class="combo" id="acc"></span></div>
+</div>
+<div class="judge" id="judge"></div>
+<div class="heard" id="heard" hidden>Hearing<b id="heardNote">–</b></div>
+<div class="count" id="count" hidden></div>
+<button class="pausebtn" id="pauseBtn" type="button" hidden>Pause</button>
+
+<!-- setup -->
+<div class="overlay" id="setup">
+  <div class="card">
+    <div><h1>Whistle Hero</h1><p class="muted">Play along on a D whistle. The game listens through your microphone.</p></div>
+    <div class="field">
+      <label for="tune">Tune</label>
+      <select id="tune"></select>
+      <span class="hint" id="tuneHint"></span>
+    </div>
+    <div class="field">
+      <span class="lab">View</span>
+      <div class="seg" role="group" aria-label="View">
+        <button type="button" data-mode="fingers" aria-pressed="true">Finger holes</button>
+        <button type="button" data-mode="sheet" aria-pressed="false" disabled title="Coming next">Sheet music (coming next)</button>
+      </div>
+    </div>
+    <div class="field">
+      <label for="speed">Speed <output id="speedOut"></output></label>
+      <input id="speed" type="range" min="50" max="120" step="5">
+    </div>
+    <div class="field">
+      <span class="lab">Who's playing</span>
+      <div class="seg" role="group" aria-label="Input">
+        <button type="button" data-input="mic" aria-pressed="true">Me, on the microphone</button>
+        <button type="button" data-input="sim" aria-pressed="false">Simulated player</button>
+      </div>
+      <div class="row" id="simOpts" hidden>
+        <select id="profile" aria-label="Simulated player"></select>
+        <label class="row"><input type="checkbox" id="monitor" checked> Hear it</label>
+      </div>
+      <span class="hint" id="inputHint">Play on your whistle. Use headphones if you add backing sound later, so the game hears only you.</span>
+    </div>
+    <details>
+      <summary>Timing adjustment</summary>
+      <div class="field" style="margin-top:10px">
+        <label for="latency">Shift my timing by <output>ms</output></label>
+        <input id="latency" type="number" step="5" min="-300" max="300">
+        <span class="hint">If the results say you're consistently early or late when you know you aren't, enter that amount here (late is positive). Mic and speaker delays are already allowed for.</span>
+      </div>
+    </details>
+    <div class="row">
+      <button class="primary" id="startBtn" type="button">Start</button>
+      <a class="btn" href="tunes.html">Tune Library</a>
+    </div>
+    <p class="muted" id="setupMsg" role="status"></p>
+  </div>
+</div>
+
+<!-- pause -->
+<div class="overlay" id="paused" hidden>
+  <div class="card"><h2>Paused</h2>
+    <div class="row"><button class="primary" id="resumeBtn" type="button">Resume</button><button id="restartBtn" type="button">Restart</button><button id="quitBtn" type="button">Quit</button></div>
+  </div>
+</div>
+
+<!-- results -->
+<div class="overlay" id="results" hidden>
+  <div class="card">
+    <div><h2 id="rTitle"></h2><div class="stars" id="rStars" aria-label=""></div></div>
+    <div class="stats" id="rStats"></div>
+    <p class="note" id="rNote"></p>
+    <div class="row"><button class="primary" id="againBtn" type="button">Play again</button><button id="menuBtn" type="button">Choose another tune</button><a class="btn" href="tunes.html">Tune Library</a></div>
+  </div>
+</div>
+
+<script type="module">
+import { parseAbc } from "./src/abc/abc.js";
+import { buildChart } from "./src/chart/chart.js";
+import { createGame } from "./src/game/engine.js";
+import { createListener } from "./src/audio/live.js";
+import { DEFAULT_SETTINGS } from "./src/audio/detector.js";
+import { renderAbc, PRESETS, PROFILES } from "./src/sim/whistle-synth.js";
+import { noteInfo } from "./src/whistle.js";
+import { loadLibrary, saveLibrary, groupTunes } from "./src/library.js";
+import { createFingerView } from "./src/game/views/finger-view.js";
+const $ = s => document.querySelector(s);
+
+/* ---------- preferences ---------- */
+const PREFS = "whistle-hero-play";
+let prefs = { tune: null, speed: 100, input: "mic", profile: "typical", monitor: true, latency: 0, mode: "fingers" };
+try { Object.assign(prefs, JSON.parse(localStorage.getItem(PREFS) || "{}")); } catch (e) {}
+const savePrefs = () => { try { localStorage.setItem(PREFS, JSON.stringify(prefs)); } catch (e) {} };
+const urlTune = new URLSearchParams(location.search).get("tune");
+if (urlTune) prefs.tune = urlTune;
+
+/* ---------- setup screen ---------- */
+let lib = loadLibrary();
+function fillTunes() {
+  const sel = $("#tune"); sel.innerHTML = "";
+  const groups = groupTunes(lib);
+  for (const g of groups) {
+    if (g.tunes.length === 1) sel.append(new Option(g.title + (g.tunes[0].best ? `  ·  best ${g.tunes[0].best.toLocaleString()}` : ""), g.tunes[0].id));
+    else { const og = document.createElement("optgroup"); og.label = g.title; g.tunes.forEach((t, i) => og.append(new Option(`${g.title} · setting ${i + 1}`, t.id))); sel.append(og); }
+  }
+  if (!groups.length) {
+    sel.append(new Option("Your library is empty", "")); sel.disabled = true;
+    $("#tuneHint").innerHTML = ""; const b = document.createElement("button"); b.type = "button"; b.textContent = "Add the example tunes";
+    b.addEventListener("click", () => {
+      for (const [i, p] of Object.values(PRESETS).entries()) lib.tunes.push({ id: Date.now().toString(36) + i, abc: `X:${i + 1}\n${p.abc}`, title: p.abc.match(/^T:(.*)$/m)?.[1].trim() || p.label, added: new Date().toISOString(), favorite: false, transpose: 0, bpm: null });
+      saveLibrary(lib); fillTunes();
+    });
+    $("#tuneHint").append("Paste tunes in the Tune Library, or ", b);
+    $("#startBtn").disabled = true; return;
+  }
+  sel.disabled = false; $("#startBtn").disabled = false; $("#tuneHint").textContent = "";
+  if (prefs.tune && lib.tunes.some(t => t.id === prefs.tune)) sel.value = prefs.tune;
+  prefs.tune = sel.value;
+}
+fillTunes();
+$("#tune").addEventListener("change", e => { prefs.tune = e.target.value; savePrefs(); });
+for (const [k, p] of Object.entries(PROFILES)) $("#profile").append(new Option(p.label, k));
+$("#profile").value = prefs.profile; $("#monitor").checked = prefs.monitor; $("#latency").value = prefs.latency;
+$("#speed").value = prefs.speed;
+const showSpeed = () => { $("#speedOut").textContent = prefs.speed + "%"; };
+showSpeed();
+$("#speed").addEventListener("input", e => { prefs.speed = +e.target.value; showSpeed(); savePrefs(); });
+$("#profile").addEventListener("change", e => { prefs.profile = e.target.value; savePrefs(); });
+$("#monitor").addEventListener("change", e => { prefs.monitor = e.target.checked; savePrefs(); });
+$("#latency").addEventListener("change", e => { prefs.latency = Math.max(-300, Math.min(300, +e.target.value || 0)); e.target.value = prefs.latency; savePrefs(); });
+function showInput() {
+  document.querySelectorAll("[data-input]").forEach(b => b.setAttribute("aria-pressed", b.dataset.input === prefs.input));
+  $("#simOpts").hidden = prefs.input !== "sim";
+  $("#inputHint").textContent = prefs.input === "sim"
+    ? "The simulator plays the tune into the game, so you can watch how it works without playing."
+    : "Play on your whistle. Use headphones for any backing sound, so the game hears only you.";
+}
+showInput();
+document.querySelectorAll("[data-input]").forEach(b => b.addEventListener("click", () => { prefs.input = b.dataset.input; savePrefs(); showInput(); }));
+
+/* ---------- a game session ---------- */
+let S = null; // { ctx, game, view, ear, t0, comp, raf, tune, chart, … }
+const msg = s => { $("#setupMsg").textContent = s; };
+
+async function start() {
+  lib = loadLibrary(); // the Tune Library may have changed in another tab
+  const tune = lib.tunes.find(t => t.id === prefs.tune);
+  if (!tune) return;
+  msg("Getting ready…");
+  const parsed = parseAbc(tune.abc, { transpose: tune.transpose || 0 });
+  const base = buildChart(parsed, { bpm: tune.bpm });
+  const chart = buildChart(parsed, { bpm: base.qpm * prefs.speed / 100 });
+  if (!chart.notes.length) { msg("That tune has no notes."); return; }
+
+  const ctx = new AudioContext({ latencyHint: "interactive" });
+  await ctx.resume();
+  const ear = await createListener(ctx, { ...DEFAULT_SETTINGS });
+  const outLat = (ctx.outputLatency || 0) + (ctx.baseLatency || 0);
+  let inLat = 0, simSrc = null, simLead = 0;
+  try {
+    if (prefs.input === "mic") inLat = (await ear.useMicrophone()).inputLatency || 0;
+  } catch (e) {
+    ctx.close(); msg(e && e.name === "NotAllowedError" ? "The microphone was blocked. Allow it in the browser's address bar, or try the simulated player." : "No microphone is available here. Try the simulated player.");
+    return;
+  }
+  // count-in: one bar of clicks, then the first note at game time 0
+  const beat = chart.beatSeconds, countIn = Math.max(2, chart.beatsPerBar);
+  const t0 = ctx.currentTime + 0.4 + countIn * beat;
+  for (let k = countIn; k >= 1; k--) click(ctx, t0 - k * beat, k === countIn);
+  if (prefs.input === "sim") {
+    const r = renderAbc(tune.abc, { profile: prefs.profile, bpm: chart.qpm, transpose: tune.transpose || 0, seed: 1 + Math.floor(Math.random() * 9999) });
+    const buf = ctx.createBuffer(1, r.samples.length, r.sr); buf.copyToChannel(r.samples, 0);
+    simSrc = ctx.createBufferSource(); simSrc.buffer = buf;
+    ear.input(simSrc);
+    if (prefs.monitor) { const g = ctx.createGain(); g.gain.value = 0.8; simSrc.connect(g).connect(ctx.destination); }
+    simLead = r.truth.notes[0].start - chart.notes[0].t;
+    simSrc.start(t0 - simLead);
+  }
+  // Detected times are when the sound reached the analyser. With a microphone, the player was hearing
+  // the count-in late by the output delay and the mic adds its own delay; the simulator is direct.
+  const comp = (prefs.input === "mic" ? outLat + inLat : 0) + prefs.latency / 1000;
+  const game = createGame(chart);
+  const stage = $("#stage"); stage.innerHTML = "";
+  const view = createFingerView(stage, chart);
+  S = { ctx, game, view, ear, t0, comp, outLat, tune, chart, simSrc, frame: null, ended: false, raf: 0 };
+
+  ear.on("frame", fr => { if (S) S.frame = fr; });
+  ear.on("onset", e => game.onset(e.midi, e.t - t0 - comp));
+  ear.on("grace", e => game.grace(e.midi, e.t - t0 - comp));
+  game.on(onJudgment);
+  view.onEvent && game.on(e => view.onEvent(e));
+
+  $("#setup").hidden = true; $("#results").hidden = true; $("#paused").hidden = true;
+  for (const id of ["#hud", "#heard", "#pauseBtn", "#progress"]) $(id).hidden = false;
+  $("#hudTune").textContent = tune.title;
+  $("#hudInfo").textContent = `${prefs.speed}% · ${Math.round(chart.qpm)} bpm` + (prefs.input === "sim" ? ` · ${PROFILES[prefs.profile].label}` : "");
+  updateHud();
+  msg("");
+  loop();
+}
+
+// a short woodblock-like click: noise, no clear pitch, so the detector ignores it
+function click(ctx, at, strong) {
+  const len = 0.03, buf = ctx.createBuffer(1, Math.ceil(len * ctx.sampleRate), ctx.sampleRate), d = buf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (0.004 * ctx.sampleRate));
+  const src = ctx.createBufferSource(); src.buffer = buf;
+  const f = ctx.createBiquadFilter(); f.type = "bandpass"; f.frequency.value = strong ? 2400 : 1700; f.Q.value = 1.2;
+  const g = ctx.createGain(); g.gain.value = strong ? 0.9 : 0.6;
+  src.connect(f).connect(g).connect(ctx.destination); src.start(at);
+}
+
+const JUDGE_TEXT = { perfect: ["Perfect", "var(--brass)"], good: ["Good", "var(--ok)"], ok: ["OK", "var(--grace)"], miss: ["Miss", "var(--off)"] };
+let judgeTimer = 0;
+function flash(text, color, sub = "") {
+  const el = $("#judge"); el.innerHTML = ""; el.append(text);
+  if (sub) { const s = document.createElement("small"); s.textContent = sub; el.append(s); }
+  el.style.color = color; el.classList.add("show");
+  clearTimeout(judgeTimer); judgeTimer = setTimeout(() => el.classList.remove("show"), 380);
+}
+function onJudgment(e) {
+  if (e.type === "hit") { const [t, c] = JUDGE_TEXT[e.grade]; flash(t, c, e.grade === "perfect" ? "" : `${Math.round(Math.abs(e.offset) * 1000)} ms ${e.offset > 0 ? "late" : "early"}`); }
+  else if (e.type === "miss") flash("Miss", JUDGE_TEXT.miss[1], noteInfo(e.note.midi).name);
+  else if (e.type === "wrong") flash(e.octave ? "Wrong octave" : "Wrong note", "var(--off)", `heard ${noteInfo(e.midi).name}, wanted ${noteInfo(e.note.midi).name}`);
+  else if (e.type === "ornament") flash(e.ornament.kind === "cut" ? "Cut!" : "Tap!", "var(--grace)");
+  updateHud();
+}
+function updateHud() {
+  if (!S) return;
+  const st = S.game.state, c = st.counts, judged = c.perfect + c.good + c.ok + c.miss;
+  $("#score").textContent = st.score.toLocaleString();
+  $("#combo").textContent = st.combo;
+  $("#mult").textContent = st.multiplier > 1 ? `×${st.multiplier}` : "";
+  $("#acc").textContent = judged ? `${Math.round(100 * (c.perfect + 0.7 * c.good + 0.4 * c.ok) / judged)}%` : "";
+}
+
+// The note the player should be playing now (for colouring the hit line).
+function expectedAt(t) {
+  const ns = S.chart.notes;
+  let lo = 0, hi = ns.length - 1, best = null;
+  while (lo <= hi) { const m = (lo + hi) >> 1; if (ns[m].t <= t + 0.05) { best = ns[m]; lo = m + 1; } else hi = m - 1; }
+  return best && t < best.t + best.dur + 0.05 ? best : null;
+}
+
+function loop() {
+  if (!S) return;
+  const { ctx, t0, outLat, game, view, chart } = S;
+  const t = ctx.currentTime - t0 - outLat; // what the player is hearing now, in game time
+  // allow for the detector's own delay before declaring a miss
+  game.tick(ctx.currentTime - t0 - S.comp - 0.06);
+  const fr = S.frame, heard = fr && fr.voiced ? Math.round(fr.midiF) : null;
+  const exp = expectedAt(t);
+  view.update(t, { midi: heard, expected: exp ? exp.midi : null });
+  $("#heardNote").textContent = heard != null ? noteInfo(heard).name : "–";
+  $("#progress i").style.width = Math.max(0, Math.min(100, 100 * t / chart.duration)) + "%";
+  // count-in numbers
+  const cnt = $("#count");
+  if (t < 0) { const n = Math.ceil(-t / chart.beatSeconds); cnt.hidden = n > Math.max(2, chart.beatsPerBar); cnt.textContent = n; } else cnt.hidden = true;
+  if (!S.ended && game.finished(ctx.currentTime - t0 - S.comp - 0.1)) { S.ended = true; finish(); return; }
+  S.raf = requestAnimationFrame(loop);
+}
+
+function stopSession() {
+  if (!S) return;
+  cancelAnimationFrame(S.raf);
+  try { S.simSrc && S.simSrc.stop(); } catch (e) {}
+  S.ear.stop(); S.ctx.close(); S.view.destroy();
+  for (const id of ["#hud", "#heard", "#pauseBtn", "#progress", "#count"]) $(id).hidden = true;
+  $("#judge").classList.remove("show");
+  S = null;
+}
+
+function finish() {
+  const s = S.game.summary(), tune = S.tune, input = prefs.input;
+  // save a personal best for your own playing
+  let best = false;
+  if (input === "mic" && s.score > (tune.best || 0)) { const t = lib.tunes.find(x => x.id === tune.id); if (t) { t.best = s.score; saveLibrary(lib); best = true; } }
+  stopSession();
+  $("#rTitle").textContent = tune.title;
+  const stars = $("#rStars"); stars.innerHTML = ""; stars.setAttribute("aria-label", `${s.stars} of 5 stars`);
+  for (let i = 0; i < 5; i++) { const sp = document.createElement("span"); sp.textContent = "★"; if (i >= s.stars) sp.className = "off"; stars.append(sp); }
+  const stats = $("#rStats"); stats.innerHTML = "";
+  const stat = (v, l) => { const d = document.createElement("div"); d.className = "stat"; const b = document.createElement("b"); b.textContent = v; const sp = document.createElement("span"); sp.textContent = l; d.append(b, sp); stats.append(d); };
+  stat(s.score.toLocaleString(), best ? "score · new best!" : "score");
+  stat(Math.round(s.accuracy * 100) + "%", "accuracy");
+  stat(`${s.hit}/${s.notes}`, "notes hit");
+  stat(s.maxCombo, "best combo");
+  stat(`${s.perfect} / ${s.good} / ${s.ok}`, "perfect / good / ok");
+  if (s.ornaments) stat(`${s.ornamentsHit}/${s.ornaments}`, "cuts and taps");
+  const ms = Math.round(s.meanOffset * 1000);
+  $("#rNote").textContent = s.hit < 3 ? "The game hardly heard any notes. Check the microphone is allowed and close enough, or try a slower speed."
+    : Math.abs(ms) < 15 ? "Your timing was right on the beat."
+    : `On average you played ${Math.abs(ms)} ms ${ms > 0 ? "late" : "early"}.` + (input === "mic" && Math.abs(ms) > 30 ? ` If that feels wrong, set "Shift my timing" to ${ms} ms in the setup screen.` : "");
+  fillTunes();
+  $("#results").hidden = false;
+}
+
+function pause() { if (!S || S.ended) return; S.ctx.suspend(); $("#paused").hidden = false; }
+function resume() { if (!S) return; $("#paused").hidden = true; S.ctx.resume(); }
+$("#startBtn").addEventListener("click", start);
+$("#pauseBtn").addEventListener("click", pause);
+$("#resumeBtn").addEventListener("click", resume);
+$("#restartBtn").addEventListener("click", () => { stopSession(); start(); });
+$("#quitBtn").addEventListener("click", () => { stopSession(); $("#paused").hidden = true; $("#setup").hidden = false; });
+$("#againBtn").addEventListener("click", () => { $("#results").hidden = true; start(); });
+$("#menuBtn").addEventListener("click", () => { $("#results").hidden = true; $("#setup").hidden = false; });
+addEventListener("keydown", e => {
+  if (!S) return;
+  if (e.key === "Escape" || e.key === " ") { e.preventDefault(); $("#paused").hidden ? pause() : resume(); }
+});
+document.addEventListener("visibilitychange", () => { if (document.hidden) pause(); });
+</script>
+</body>
+</html>

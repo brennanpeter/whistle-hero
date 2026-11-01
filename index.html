@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Whistle Hero</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;800&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root{
+  --bg:#E8EDEA; --surface:#F6F8F6; --ink:#16201D; --muted:#56655F; --line:#C5D0CA; --brass:#946512;
+  --f-display:"Big Shoulders Display","Arial Narrow",Impact,sans-serif;
+  --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#0F1412; --surface:#171E1B; --ink:#E2E8E4; --muted:#91A199; --line:#2B3732; --brass:#DAAB4F; color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0F1412; --surface:#171E1B; --ink:#E2E8E4; --muted:#91A199; --line:#2B3732; --brass:#DAAB4F; color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f-body);line-height:1.5;padding:40px 16px}
+.wrap{max-width:880px;margin:0 auto;display:flex;flex-direction:column;gap:28px}
+h1{margin:0;font:800 64px/.9 var(--f-display);text-transform:uppercase;letter-spacing:.01em}
+.lede{margin:10px 0 0;color:var(--muted);font-size:17px;max-width:60ch}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}
+a.card{display:flex;flex-direction:column;gap:6px;padding:18px;border-radius:10px;background:var(--surface);border:1px solid var(--line);color:inherit;text-decoration:none}
+a.card:hover{border-color:var(--muted)}
+a.card:focus-visible{outline:2px solid var(--brass);outline-offset:2px}
+a.card.main{border-color:var(--brass)}
+a.card h2{margin:0;font:800 26px/1 var(--f-display);text-transform:uppercase}
+a.card p{margin:0;color:var(--muted);font-size:14px}
+.k{font:500 11px var(--f-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--brass)}
+@media (max-width:520px){h1{font-size:48px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header><h1>Whistle Hero</h1><p class="lede">A play-along game for the D tin whistle. Paste a tune, pick it up on your whistle, and the game listens and scores you as you play.</p></header>
+  <nav class="cards" aria-label="Pages">
+    <a class="card main" href="play.html"><span class="k">Play</span><h2>Game</h2><p>Follow the finger holes down the highway and play along.</p></a>
+    <a class="card" href="tunes.html"><span class="k">Tunes</span><h2>Tune Library</h2><p>Paste ABC, check it fits the whistle, preview the chart.</p></a>
+    <a class="card" href="whistle-ear.html"><span class="k">Test bench</span><h2>Whistle Ear</h2><p>See what the pitch detector hears, live or from a recording.</p></a>
+    <a class="card" href="whistle-sim.html"><span class="k">Test bench</span><h2>Whistle Sim</h2><p>A simulated whistle player for testing without playing.</p></a>
+  </nav>
+</div>
+</body>
+</html>

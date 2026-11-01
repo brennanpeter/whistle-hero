@@ -4,7 +4,9 @@ A Guitar Hero–style browser game for the D tin whistle. Notes scroll toward yo
 
 ## Status
 
-Early days. The repo currently holds the audio groundwork. See [ROADMAP.md](ROADMAP.md) for what comes next.
+Playable, early. See [ROADMAP.md](ROADMAP.md) for what's done and what comes next.
+
+- **`play.html`**: the game. Pick a tune from your library and play along in the **finger-hole view**: each note is a row of the whistle's six holes rolling toward you (filled = covered), gold for the second octave, with a halo on each finger that moves and a flick for each cut or tap. The hit line lights up with the fingering the game hears you playing. Choose a speed from 50% to 120%, or let a simulated player play so you can watch. A sheet music view is next.
 
 - **`whistle-ear.html`**: a test bench for pitch detection. It runs the McLeod pitch method on live mic input or a recording, segments the stream into notes, and filters out overtone jumps and short "sliver" transients.
 - **`whistle-sim.html`**: a synthetic D whistle for testing without playing. Paste ABC from The Session, pick a player (clean, typical, beginner, noisy pub), and it plays the tune with tonguing, cuts, taps, rolls, slides, vibrato and deliberate mistakes. **Send to Whistle Ear** loads the clip into the test bench along with the notes it meant to play, so you can see what the detector got right and wrong.
@@ -14,13 +16,14 @@ Tunes come in as ABC you paste or open yourself. Whistle Hero doesn't download f
 
 ## Running it
 
-Needs Node 20 or newer. There are no packages to install yet.
+Needs Node 20.19 or newer.
 
 ```bash
-npm run dev
+npm install
+npm run dev        # Vite dev server
 ```
 
-Then open <http://localhost:5173/tunes.html>, <http://localhost:5173/whistle-ear.html> or <http://localhost:5173/whistle-sim.html>. Serving from localhost lets ES modules load and allows mic access.
+Then open <http://localhost:5173/>. Serving from localhost allows microphone access. `npm run build` bundles everything into `dist/` for hosting; `npm run serve` is a no-install fallback that serves the test-bench pages (the game needs Vite for three.js).
 
 You can also test the live mic path without a whistle: play a clip in Whistle Sim through your speakers while Whistle Ear listens.
 
@@ -36,7 +39,7 @@ Each `.wav` gets a matching `.truth.json` listing the intended notes and the inj
 ## Tests
 
 ```bash
-npm test                       # unit tests plus the detector accuracy check (about 25 s)
+npm test                       # unit tests, game engine tests and the detector accuracy check (about 30 s)
 npm run accuracy               # print detection accuracy for every simulated scenario
 npm run accuracy -- --update   # after improving the detector, save the new numbers as the baseline
 ```
@@ -46,6 +49,8 @@ The accuracy check renders 24 scenarios with Whistle Sim (each example tune with
 ## Layout
 
 ```
+index.html              home page
+play.html               the game
 whistle-ear.html        detector test bench
 whistle-sim.html        simulator page
 tunes.html              Tune Library
@@ -55,10 +60,14 @@ src/audio/score.js      compare detected notes with intended ones
 src/abc/abc.js          ABC parser (multi-tune files, metadata, repeats, endings, parts, ornaments…)
 src/abc/playability.js  half-hole and range check, transposition suggestions
 src/chart/chart.js      game charts: timed notes, cuts and taps, bars and beats
+src/game/engine.js      judging and scoring (no DOM, tested in Node)
+src/game/views/         ways of drawing the game: finger-view.js (three.js)
+src/audio/live.js       real-time detection from the mic or the simulator
+src/library.js          the tune library in browser storage
 src/sim/whistle-synth.js
                         synthetic whistle and player model
 tools/                  dev server, WAV renderer, accuracy report
 test/                   node:test suites and the accuracy baseline
 ```
 
-Everything in `src/` is a plain ES module with no dependencies, so the same code runs in the browser and in Node.
+Everything in `src/` except the views is a plain ES module with no dependencies, so the same code runs in the browser and in Node. The views use three.js.

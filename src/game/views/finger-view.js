@@ -1,0 +1,226 @@
+// Finger-hole view: each note is a row of the whistle's six holes rolling down a highway toward
+// the player. A filled hole is covered. Fingers that move from the previous note get a halo, cuts
+// and taps show as a quick flick on the one finger that moves, and second-octave notes are gold
+// ("same fingers, blow harder"). At the hit line, the holes light up with the fingering of the note
+// the detector is hearing right now.
+//
+// View contract (shared with every view): createXView(container, chart, opts) →
+//   { update(t, live), onEvent(e), resize(), destroy() }
+// t is game time in seconds; live = { midi } for the note heard now (or null).
+import * as THREE from "three";
+import { noteInfo, FINGERINGS } from "../../whistle.js";
+
+const HOLE_X = [-3.1, -2.05, -1.0, 1.0, 2.05, 3.1]; // top hand, gap, bottom hand (mouthpiece is on the left)
+const COLORS = {
+  bg: 0x0d1210, road: 0x141c19, lane: 0x24302b, bar: 0x5b6b64, beat: 0x2b3732,
+  low: 0xe2e8e4, high: 0xdaab4f, third: 0xf3d58a, off: 0xe36b5d, change: 0x5fbbb1, orn: 0x5fbbb1,
+  hit: 0x62be7d, miss: 0x6b3a35, target: 0x91a199, heardOk: 0x62be7d, heardWrong: 0xe36b5d,
+};
+
+export function createFingerView(container, chart, { speed = 7, lookahead = 4 } = {}) {
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+  renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+  renderer.setClearColor(COLORS.bg);
+  container.append(renderer.domElement);
+  renderer.domElement.style.display = "block";
+  renderer.domElement.setAttribute("aria-hidden", "true");
+
+  const scene = new THREE.Scene();
+  const FOG_NEAR = speed * lookahead * 0.7 + 4, FOG_FAR = speed * lookahead * 1.15 + 4;
+  scene.fog = new THREE.Fog(COLORS.bg, FOG_NEAR, FOG_FAR);
+  const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 300);
+  // looking down the highway; puts the hit line about a fifth of the way up the screen
+  const BASE_POS = new THREE.Vector3(0, 8.2, 8.6), TARGET = new THREE.Vector3(0, 0, -6.5), HIT = new THREE.Vector3(0, 0, 0);
+  camera.position.copy(BASE_POS); camera.lookAt(TARGET);
+
+  const flat = g => { g.rotateX(-Math.PI / 2); return g; };
+  const disposables = [];
+  const keep = x => { disposables.push(x); return x; };
+
+  // road and lanes
+  const roadLen = speed * lookahead * 1.3 + 10;
+  const road = new THREE.Mesh(keep(flat(new THREE.PlaneGeometry(8.6, roadLen))), keep(new THREE.MeshBasicMaterial({ color: COLORS.road })));
+  road.position.set(0, -0.02, -roadLen / 2 + 3);
+  scene.add(road);
+  for (const x of HOLE_X) {
+    const lane = new THREE.Mesh(keep(flat(new THREE.PlaneGeometry(0.05, roadLen))), keep(new THREE.MeshBasicMaterial({ color: COLORS.lane })));
+    lane.position.set(x, -0.015, -roadLen / 2 + 3); scene.add(lane);
+  }
+
+  // everything that scrolls lives in `track`; notes sit at z = -t * speed
+  const track = new THREE.Group(); scene.add(track);
+  const zOf = t => -t * speed;
+
+  // bar and beat lines
+  {
+    const pts = [], beatPts = [];
+    for (const b of chart.bars) if (!b.pickup) pts.push(-4.1, 0, zOf(b.t), 4.1, 0, zOf(b.t));
+    for (const b of chart.beats) if (!b.strong) beatPts.push(-4.1, 0, zOf(b.t), 4.1, 0, zOf(b.t));
+    const mk = (arr, color) => { const g = keep(new THREE.BufferGeometry()); g.setAttribute("position", new THREE.Float32BufferAttribute(arr, 3)); return new THREE.LineSegments(g, keep(new THREE.LineBasicMaterial({ color }))); };
+    if (beatPts.length) track.add(mk(beatPts, COLORS.beat));
+    if (pts.length) track.add(mk(pts, COLORS.bar));
+  }
+
+  // note rows: filled discs (covered holes) and rings (open holes), as instanced meshes
+  const fingering = midi => { const inf = noteInfo(midi); return inf.inScale ? FINGERINGS[inf.pc] : null; };
+  const discGeo = keep(flat(new THREE.CircleGeometry(0.34, 28)));
+  const ringGeo = keep(flat(new THREE.RingGeometry(0.25, 0.34, 28)));
+  const haloGeo = keep(flat(new THREE.RingGeometry(0.43, 0.5, 28)));
+  const flickGeo = keep(flat(new THREE.CircleGeometry(0.16, 4)));
+  const counts = { disc: 0, ring: 0, halo: 0, flick: chart.ornaments.length * 2 };
+  let prevF = null;
+  for (const n of chart.notes) {
+    const f = fingering(n.midi) || [0, 0, 0, 0, 0, 0];
+    for (let h = 0; h < 6; h++) { if (f[h]) counts.disc++; else counts.ring++; if (prevF && prevF[h] !== f[h]) counts.halo++; }
+    prevF = f;
+  }
+  const mat = () => keep(new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 1 }));
+  const discs = new THREE.InstancedMesh(discGeo, mat(), Math.max(1, counts.disc));
+  const rings = new THREE.InstancedMesh(ringGeo, mat(), Math.max(1, counts.ring));
+  const halos = new THREE.InstancedMesh(haloGeo, mat(), Math.max(1, counts.halo));
+  const flicks = new THREE.InstancedMesh(flickGeo, mat(), Math.max(1, counts.flick));
+  for (const m of [discs, rings, halos, flicks]) { m.count = 0; m.frustumCulled = false; track.add(m); }
+  const M = new THREE.Matrix4(), col = new THREE.Color();
+  const put = (mesh, x, z, color, scale = 1) => {
+    const i = mesh.count++;
+    M.makeScale(scale, 1, scale); M.setPosition(x, 0, z); mesh.setMatrixAt(i, M);
+    mesh.setColorAt(i, col.set(color)); return i;
+  };
+  const rowParts = new Map(); // note id → [[mesh, index, baseColor]]
+  prevF = null;
+  let prevMidi = null;
+  for (const n of chart.notes) {
+    const inf = noteInfo(n.midi), f = fingering(n.midi), z = zOf(n.expect ?? n.t);
+    const base = !f ? COLORS.off : inf.oct >= 2 ? COLORS.third : inf.oct === 1 ? COLORS.high : COLORS.low;
+    const parts = [];
+    const ff = f || [0, 0, 0, 0, 0, 0];
+    for (let h = 0; h < 6; h++) {
+      if (ff[h]) parts.push([discs, put(discs, HOLE_X[h], z, base), base]);
+      else parts.push([rings, put(rings, HOLE_X[h], z, base), base]);
+      if (prevF && prevMidi !== n.midi && prevF[h] !== ff[h]) put(halos, HOLE_X[h], z, COLORS.change);
+    }
+    rowParts.set(n.id, parts);
+    prevF = ff; prevMidi = n.midi;
+  }
+  // cuts and taps: a flick on each finger that moves away from the main note's fingering
+  for (const o of chart.ornaments) {
+    const main = chart.notes[o.note], fm = fingering(main.midi), fo = fingering(o.midi);
+    if (!fm || !fo) continue;
+    for (let h = 0; h < 6; h++) if (fm[h] !== fo[h]) put(flicks, HOLE_X[h], zOf(o.t) + 0.15, COLORS.orn, 1.4);
+  }
+  for (const m of [discs, rings, halos, flicks]) { m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; }
+
+  // note names and octave arrows beside each row
+  const labelCache = new Map();
+  const labelTex = (text, color) => {
+    const key = text + color;
+    if (labelCache.has(key)) return labelCache.get(key);
+    const c = document.createElement("canvas"); c.width = 128; c.height = 64;
+    const g = c.getContext("2d"); g.font = "600 40px 'IBM Plex Mono', ui-monospace, monospace"; g.fillStyle = "#" + new THREE.Color(color).getHexString();
+    g.textBaseline = "middle"; g.fillText(text, 6, 34);
+    const tex = keep(new THREE.CanvasTexture(c)); tex.colorSpace = THREE.SRGBColorSpace;
+    const m = keep(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
+    labelCache.set(key, m); return m;
+  };
+  for (const n of chart.notes) {
+    const inf = noteInfo(n.midi), color = !inf.inScale ? COLORS.off : inf.oct >= 1 ? COLORS.high : COLORS.low;
+    const s = new THREE.Sprite(labelTex(inf.name + (inf.oct === 1 ? " ↑" : inf.oct >= 2 ? " ⇈" : "") + (!inf.inScale ? " ½" : ""), color));
+    s.scale.set(1.3, 0.65, 1); s.position.set(4.55, 0.25, zOf(n.expect ?? n.t)); track.add(s);
+  }
+  // part labels at the start of each part
+  { let lastPart = -1, lastPass = 0;
+    for (const b of chart.bars) {
+      if (b.part === lastPart && b.pass === lastPass) continue;
+      const s = new THREE.Sprite(labelTex(String.fromCharCode(65 + b.part) + (b.pass === 2 ? "²" : ""), COLORS.bar));
+      s.scale.set(1.2, 0.6, 1); s.position.set(-4.7, 0.2, zOf(b.t)); track.add(s);
+      lastPart = b.part; lastPass = b.pass;
+    } }
+
+  // hit line: six sockets that light up with the fingering being heard
+  const sockets = HOLE_X.map(x => {
+    const ring = new THREE.Mesh(ringGeo, keep(new THREE.MeshBasicMaterial({ color: COLORS.target })));
+    const fill = new THREE.Mesh(discGeo, keep(new THREE.MeshBasicMaterial({ color: COLORS.heardOk, transparent: true, opacity: 0 })));
+    ring.position.set(x, 0.01, 0); fill.position.set(x, 0.012, 0); ring.scale.setScalar(1.25); fill.scale.setScalar(1.1);
+    scene.add(ring, fill); return { ring, fill };
+  });
+  const hitLine = new THREE.Mesh(keep(flat(new THREE.PlaneGeometry(8.6, 0.06))), keep(new THREE.MeshBasicMaterial({ color: COLORS.target })));
+  hitLine.position.set(0, 0.005, 0); scene.add(hitLine);
+
+  // hit bursts
+  const bursts = Array.from({ length: 16 }, () => {
+    const m = new THREE.Mesh(haloGeo, keep(new THREE.MeshBasicMaterial({ color: COLORS.hit, transparent: true, opacity: 0, depthWrite: false })));
+    scene.add(m); return { m, t0: -1 };
+  });
+  let burstI = 0;
+  const burst = (x, color, now) => { const b = bursts[burstI++ % bursts.length]; b.m.material.color.set(color); b.m.position.set(x, 0.02, 0); b.t0 = now; };
+
+  const recolor = (id, color, opacity = 1) => {
+    for (const [mesh, i] of rowParts.get(id) || []) { mesh.setColorAt(i, col.set(color)); mesh.instanceColor.needsUpdate = true; }
+  };
+
+  let now = 0, raf = 0;
+  function onEvent(e) {
+    if (e.type === "hit") {
+      recolor(e.note.id, COLORS.hit);
+      const f = fingering(e.note.midi) || [1, 1, 1, 1, 1, 1];
+      HOLE_X.forEach((x, h) => { if (f[h] || e.grade === "perfect") burst(x, e.grade === "perfect" ? COLORS.high : COLORS.hit, performance.now()); });
+    } else if (e.type === "miss") recolor(e.note.id, COLORS.miss);
+  }
+
+  function update(t, live) {
+    now = t;
+    track.position.z = t * speed;
+    // what the player is playing right now, shown on the hit line
+    const heard = live && live.midi != null ? fingering(live.midi) : null;
+    const ok = live && live.expected != null && live.midi === live.expected;
+    sockets.forEach((s, h) => {
+      const on = heard && heard[h];
+      s.fill.material.opacity = on ? 0.9 : 0;
+      s.fill.material.color.set(ok ? COLORS.heardOk : COLORS.heardWrong);
+      s.ring.material.color.set(heard ? (ok ? COLORS.heardOk : COLORS.target) : COLORS.target);
+    });
+    const pn = performance.now();
+    for (const b of bursts) {
+      if (b.t0 < 0) continue;
+      const k = (pn - b.t0) / 350;
+      if (k >= 1) { b.t0 = -1; b.m.material.opacity = 0; continue; }
+      b.m.scale.setScalar(1 + k * 1.6); b.m.material.opacity = 0.85 * (1 - k);
+    }
+    renderer.render(scene, camera);
+  }
+
+  function resize() {
+    const w = container.clientWidth, h = container.clientHeight;
+    if (!w || !h) return;
+    renderer.setSize(w, h, false);
+    renderer.domElement.style.width = w + "px"; renderer.domElement.style.height = h + "px";
+    const aspect = w / h;
+    camera.aspect = aspect;
+    // Keep all six holes and the note names in view on narrow screens: widen the lens a little,
+    // then pull the camera back along its line of sight until the hit line's 10.6 units fit.
+    const halfW = 5.3, baseDist = BASE_POS.distanceTo(HIT), deg = Math.PI / 180;
+    camera.fov = Math.min(68, Math.max(50, 2 * Math.atan(Math.tan(24 * deg) / aspect) / deg));
+    const need = halfW / (Math.tan(camera.fov / 2 * deg) * aspect);
+    const k = Math.max(1, need / baseDist);
+    camera.position.copy(TARGET).addScaledVector(BASE_POS.clone().sub(TARGET), k);
+    camera.lookAt(TARGET);
+    scene.fog.near = FOG_NEAR + (k - 1) * baseDist; scene.fog.far = FOG_FAR + (k - 1) * baseDist;
+    // then slide the picture so the hit line sits near the bottom on any screen shape
+    camera.clearViewOffset(); camera.updateProjectionMatrix(); camera.updateMatrixWorld();
+    const ndcY = HIT.clone().project(camera).y, wantY = -0.62;
+    camera.setViewOffset(w, h, 0, (wantY - ndcY) * h / 2, w, h);
+    camera.updateProjectionMatrix();
+  }
+  resize();
+  const ro = new ResizeObserver(resize); ro.observe(container);
+
+  return {
+    update, onEvent, resize,
+    destroy() {
+      cancelAnimationFrame(raf); ro.disconnect();
+      for (const d of disposables) d.dispose?.();
+      for (const m of [discs, rings, halos, flicks]) m.dispose();
+      renderer.dispose(); renderer.domElement.remove();
+    },
+  };
+}

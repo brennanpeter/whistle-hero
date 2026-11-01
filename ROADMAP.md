@@ -9,7 +9,7 @@ Rough order of work for Whistle Hero. Each phase leans on the one before it. Che
 - [x] Move the detector out of `whistle-ear.html` into a shared module (`src/audio/`) so Whistle Ear, the game and the tests all run the same code
 - [x] Move the sim's ABC parser into `src/abc/` for the same reason (the game needs it for charts)
 - [x] `npm test`: render Whistle Sim scenarios, run the detector on them, and fail if accuracy drops below the saved baseline for any scenario. Run it in GitHub Actions on every push.
-- [ ] Switch to Vite when three.js comes in (start of Phase 3); deploy to GitHub Pages (HTTPS, so the mic works for anyone)
+- [x] Switch to Vite (done at the start of Phase 3); GitHub Pages deployment is listed under Phase 3
 
 ## Phase 1: Harden the detector
 
@@ -40,15 +40,23 @@ Tunes come in as ABC the player pastes or opens. The project doesn't download fr
 - [x] Build game charts from the parsed ABC (`src/chart/chart.js`): repeats and endings played out, parts and passes labelled, bars and a beat grid (pickups included), and cuts, taps and rolls as timed, scorable events
 - [x] Tune Library page: search, favorites, edit, delete, chart preview, play with the simulator, send to Whistle Ear, back up and restore as a file
 
-## Phase 3: Core gameplay (three.js)
+## Phase 3: Core gameplay
 
-- [ ] Note highway. Decide between one lane per note (8 lanes: D–C♯, with the octave shown by color or height) and lanes for the six finger holes showing the fingering, which would be unique to the whistle
-- [ ] Timing windows (perfect, good, miss), score, combo and streak multiplier
-- [ ] Bonus scoring for ornaments: cuts, taps, rolls and slides
-- [ ] Turn the detector's note events into hits, with latency compensation
-- [ ] Guide track: Whistle Sim plays the tune quietly, with an optional metronome or bodhrán click
-- [ ] Practice speed from 50 to 100%
-- [ ] Pause, restart and a results screen
+Whistle only for now (fiddle support would mean widening the detector's range; see "Later"). One engine, several views: the engine judges notes, and each view draws the same chart and the same judgments its own way.
+
+- [x] Switch to Vite (`npm run dev`, `npm run build`) and add three.js
+- [x] Game engine (`src/game/engine.js`): perfect / good / OK windows (45 / 90 / 140 ms), misses, wrong notes (shown, but they don't break the combo), combo and ×4 multiplier, points for written cuts and taps, cuts and slides allowed for in note timing, and the player's average timing offset
+- [x] Live input (`src/audio/live.js`): the detector runs in real time on the microphone or on the simulator's audio, reporting notes in the game's clock. Mic and speaker delays are compensated, with a manual timing adjustment until calibration lands.
+- [x] **Finger-hole view** (`src/game/views/finger-view.js`): rows of six holes down a highway, gold for the second octave, halos on fingers that move, flicks for cuts and taps, note names, part labels, and a hit line that lights up with the fingering being heard. It fits phone screens too.
+- [x] Game page (`play.html`): pick a tune, speed 50–120%, play yourself or watch a simulated player, a one-bar count-in, a heads-up display, pause (Esc or Space), and results with stars and personal bests
+- [ ] **Sheet music view**: a single staff scrolling past a playhead, drawn with abcjs from the tune's ABC. A "ghost" notehead shows the note being played at its place on the staff, colored by right or wrong, with an optional fingering strip underneath.
+- [ ] Mode switch on the setup screen (the sheet music button is already there, disabled)
+- [ ] Optional metronome during play, and a guide track for headphone users
+- [ ] Deploy to GitHub Pages so it runs over HTTPS anywhere
+
+## Later
+
+- [ ] Fiddle support: widen the detector's range down to G3, test with real fiddle recordings, and use the sheet music view (the finger-hole view is whistle-specific)
 
 ## Phase 4: Learning
 
