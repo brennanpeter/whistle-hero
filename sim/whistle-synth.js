@@ -45,6 +45,9 @@ const stepFrom = (midi, steps) => {
   return j >= 0 && j < WHISTLE_NOTES.length ? WHISTLE_NOTES[j] : null;
 };
 
+// Cut pitch: two scale steps up, except on B, where lifting the only covered hole gives C♯.
+const cutFor = midi => (((midi - LOW_D) % 12 + 12) % 12 === 9 ? stepFrom(midi, 1) : stepFrom(midi, 2)) ?? midi + 2;
+
 /* ---------------------------------------------------------------- ABC parsing */
 
 const MAJOR_FIFTHS = { C:0, G:1, D:2, A:3, E:4, B:5, "F#":6, "C#":7, F:-1, Bb:-2, Eb:-3, Ab:-4, Db:-5, Gb:-6, Cb:-7, "G#":8, "D#":9, "A#":10 };
@@ -277,7 +280,8 @@ export function parseAbc(text) {
 export const DEFAULTS = {
   sr: 44100,
   bpm: null,            // quarter notes per minute; null = use the tune's Q: or 120
-  articulation: "abc",  // "abc" (tongue unless slurred) | "legato" (tongue only repeats and after rests) | "tongued"
+  articulation: "abc",  // "abc" (tongue unless slurred) | "legato" (tongue only repeats and after rests)
+                        // | "cuts" (legato; repeated notes separated with cuts and taps) | "tongued"
   tuningCents: 0,       // whole-instrument offset from A=440
   pitchWobble: 0,       // per-note random tuning, cents (std dev)
   breathiness: 0.2,     // 0..1 air noise
@@ -324,6 +328,31 @@ function rng(seed) {
 const LEAD_IN = 0.4, TAIL = 0.6;
 
 /**
+ * For the "cuts" articulation: find runs of the same note with no rest between them and
+ * separate them with grace notes instead of the tongue.
+ *   2 in a row: cut into the first, tap into the second
+ *   3 in a row: plain, cut, tap (a long roll)
+ *   4 or more:  plain, then alternate cut, tap, cut, …
+ * Notes that already have a written roll or grace notes keep those.
+ * Returns an array parallel to evs holding "cut", "tap" or null.
+ */
+function repeatOrnaments(evs) {
+  const out = new Array(evs.length).fill(null);
+  let k = 0;
+  while (k < evs.length) {
+    if (evs[k].t !== "note") { k++; continue; }
+    let j = k + 1;
+    while (j < evs.length && evs[j].t === "note" && evs[j].midi === evs[k].midi) j++;
+    const n = j - k;
+    if (n === 2) { out[k] = "cut"; out[k + 1] = "tap"; }
+    else if (n >= 3) for (let i = 1; i < n; i++) out[k + i] = i % 2 ? "cut" : "tap";
+    for (let i = k; i < j; i++) if (evs[i].roll || evs[i].graces.length) out[i] = null;
+    k = j;
+  }
+  return out;
+}
+
+/**
  * Turn parsed events into timed sound items plus injected artifacts.
  * Items: {kind: "note"|"cut"|"tap", midi, start, end, tongued, slide, ornament, group}
  */
@@ -343,6 +372,7 @@ export function perform(parsed, opts) {
     onsets[k] += Math.max(-room, Math.min(room, R.gauss() * o.timingMs / 1000));
   }
 
+  const auto = o.articulation === "cuts" ? repeatOrnaments(evs) : [];
   const items = [];
   let prevMidi = null, prevWasRest = true;
   evs.forEach((e, k) => {
@@ -352,6 +382,7 @@ export function perform(parsed, opts) {
     const hasOrn = e.roll || e.graces.length > 0;
     let tongued;
     if (o.articulation === "tongued") tongued = true;
+    else if (o.articulation === "cuts") tongued = prevWasRest;
     else if (o.articulation === "legato") tongued = prevWasRest || (e.midi === prevMidi && !hasOrn);
     else tongued = !e.slurred || prevWasRest || (e.midi === prevMidi && !hasOrn);
     const g = Math.min(o.graceMs / 1000, dur * 0.22) * R.range(0.85, 1.15);
@@ -363,9 +394,15 @@ export function perform(parsed, opts) {
       push(gm > e.midi ? "cut" : "tap", gm, cur, cur + g, first && tongued, { ornament: "grace" });
       cur += g; first = false;
     }
+    if (auto[k]) {
+      const cut = cutFor(e.midi), tap = stepFrom(e.midi, -1);
+      const [kind, gm] = auto[k] === "tap" && tap != null ? ["tap", tap] : ["cut", cut]; // low D can't be tapped
+      push(kind, gm, cur, cur + g, first && tongued, { ornament: "repeat" });
+      cur += g; first = false;
+    }
     if (e.roll && dur - (cur - a) > 4 * g) {
       const rem = b - cur, third = rem / 3;
-      const cut = stepFrom(e.midi, 2) ?? e.midi + 2;
+      const cut = cutFor(e.midi);
       const tap = stepFrom(e.midi, -1);
       const second = tap != null ? ["tap", tap] : ["cut", cut]; // low D can't be tapped: a cran-like double cut
       push("note", e.midi, cur, cur + third, first && tongued, { ornament: "roll" });
