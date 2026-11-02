@@ -153,12 +153,16 @@ a{color:var(--brass)}
       </div>
       <span class="hint" id="inputHint">Play on your whistle. Use headphones if you add backing sound later, so the game hears only you.</span>
     </div>
+    <div class="field">
+      <span class="lab">Calibration</span>
+      <div class="row"><span id="calStatus" class="hint" style="flex:1;min-width:200px"></span><a class="btn" href="calibrate.html" id="calBtn">Calibrate</a></div>
+    </div>
     <details>
       <summary>Timing adjustment</summary>
       <div class="field" style="margin-top:10px">
         <label for="latency">Shift my timing by <output>ms</output></label>
         <input id="latency" type="number" step="5" min="-300" max="300">
-        <span class="hint">If the results say you're consistently early or late when you know you aren't, enter that amount here (late is positive). Mic and speaker delays are already allowed for.</span>
+        <span class="hint">If the results say you're consistently early or late when you know you aren't, enter that amount here (late is positive). This adds to the calibrated delay.</span>
       </div>
     </details>
     <div class="row">
@@ -210,6 +214,7 @@ import { DEFAULT_SETTINGS } from "./src/audio/detector.js";
 import { renderAbc, PRESETS, PROFILES } from "./src/sim/whistle-synth.js";
 import { noteInfo } from "./src/whistle.js";
 import { loadLibrary, saveLibrary, groupTunes } from "./src/library.js";
+import { loadCalibration, calibratedSettings } from "./src/calibration.js";
 import { createFingerView } from "./src/game/views/finger-view.js";
 const $ = s => document.querySelector(s);
 
@@ -278,6 +283,17 @@ $("#speed").addEventListener("input", e => { prefs.speed = +e.target.value; show
 $("#profile").addEventListener("change", e => { prefs.profile = e.target.value; savePrefs(); });
 $("#monitor").addEventListener("change", e => { prefs.monitor = e.target.checked; savePrefs(); });
 $("#latency").addEventListener("change", e => { prefs.latency = Math.max(-300, Math.min(300, +e.target.value || 0)); e.target.value = prefs.latency; savePrefs(); });
+function showCal() {
+  const c = loadCalibration();
+  if (!c) { $("#calStatus").textContent = "Not calibrated yet. Takes about a minute and makes timing and pitch more accurate."; $("#calBtn").classList.add("primary"); return; }
+  const p = [];
+  if (Number.isFinite(c.latencyMs)) p.push(`timing ${c.latencyMs} ms`);
+  if (Number.isFinite(c.cents)) p.push(`whistle ${c.cents >= 0 ? "+" : "−"}${Math.abs(c.cents).toFixed(0)}¢`);
+  if (Number.isFinite(c.gateDb)) p.push(`gate ${c.gateDb} dB`);
+  $("#calStatus").textContent = `Calibrated ${new Date(c.date).toLocaleDateString()}: ${p.join(" · ")}`;
+  $("#calBtn").textContent = "Recalibrate"; $("#calBtn").classList.remove("primary");
+}
+showCal();
 function showInput() {
   document.querySelectorAll("[data-input]").forEach(b => b.setAttribute("aria-pressed", b.dataset.input === prefs.input));
   $("#simOpts").hidden = prefs.input !== "sim";
@@ -305,11 +321,13 @@ async function start() {
 
   const ctx = new AudioContext({ latencyHint: "interactive" });
   await ctx.resume();
-  const ear = await createListener(ctx, { ...DEFAULT_SETTINGS });
+  const cal = loadCalibration();
+  // the calibrated noise gate and whistle tuning apply to your own playing; the simulator is in tune
+  const ear = await createListener(ctx, prefs.input === "mic" ? calibratedSettings(DEFAULT_SETTINGS, cal) : { ...DEFAULT_SETTINGS });
   const outLat = (ctx.outputLatency || 0) + (ctx.baseLatency || 0);
-  let inLat = 0;
+  let inLat = 0, micLabel = "";
   try {
-    if (prefs.input === "mic") inLat = (await ear.useMicrophone()).inputLatency || 0;
+    if (prefs.input === "mic") { const m = await ear.useMicrophone(); inLat = m.inputLatency || 0; micLabel = m.label || ""; }
   } catch (e) {
     ctx.close(); msg(e && e.name === "NotAllowedError" ? "The microphone was blocked. Allow it in the browser's address bar, or try the simulated player." : "No microphone is available here. Try the simulated player.");
     return;
@@ -323,7 +341,11 @@ async function start() {
 
   // Detected times are when the sound reached the analyser. With a microphone, the player was hearing
   // the count-in late by the output delay and the mic adds its own delay; the simulator is direct.
-  const comp = (prefs.input === "mic" ? outLat + inLat : 0) + prefs.latency / 1000;
+  // A calibrated delay was measured end to end (speaker → mic → detector), so it replaces the
+  // browser's own latency estimates. Without one, use what the browser reports.
+  const measured = cal && Number.isFinite(cal.latencyMs) ? cal.latencyMs / 1000 : null;
+  const comp = (prefs.input === "mic" ? (measured ?? outLat + inLat) : 0) + prefs.latency / 1000;
+  const otherMic = prefs.input === "mic" && cal && cal.mic && micLabel && cal.mic !== micLabel;
   const game = createGame(chart);
   const stage = $("#stage"); stage.innerHTML = "";
   const view = createFingerView(stage, chart, { halos: prefs.halos });
@@ -347,6 +369,7 @@ async function start() {
   showPassInfo();
   updateHud();
   msg("");
+  if (otherMic) setTimeout(() => flash("Different microphone", "var(--brass)", "Calibrated with another mic. Recalibrate for best timing."), 300);
   loop();
 }
 
@@ -513,7 +536,8 @@ function finish() {
   const ms = Math.round(s.meanOffset * 1000);
   $("#rNote").textContent = s.hit < 3 ? "The game hardly heard any notes. Check the microphone is allowed and close enough, or try a slower speed."
     : Math.abs(ms) < 15 ? "Your timing was right on the beat."
-    : `On average you played ${Math.abs(ms)} ms ${ms > 0 ? "late" : "early"}.` + (input === "mic" && Math.abs(ms) > 30 ? ` If that feels wrong, set "Shift my timing" to ${ms} ms in the setup screen.` : "");
+    : `On average you played ${Math.abs(ms)} ms ${ms > 0 ? "late" : "early"}.` + (input === "mic" && Math.abs(ms) > 30
+      ? (loadCalibration()?.latencyMs != null ? ` If that feels wrong, set "Shift my timing" to ${ms} ms in the setup screen.` : " If that feels wrong, calibrate from the setup screen (about a minute).") : "");
   fillTunes();
   $("#results").hidden = false;
 }

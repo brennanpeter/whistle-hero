@@ -13,6 +13,7 @@ export default defineConfig({
       input: {
         index: page("index.html"),
         play: page("play.html"),
+        calibrate: page("calibrate.html"),
         tunes: page("tunes.html"),
         ear: page("whistle-ear.html"),
         sim: page("whistle-sim.html"),

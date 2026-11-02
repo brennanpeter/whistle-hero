@@ -110,6 +110,8 @@ h2{font:600 15px var(--f-body)}
 .set input{width:100%;accent-color:var(--brass)}
 .set p{margin:0;font-size:13px;color:var(--muted)}
 .foot{font:12px var(--f-mono);color:var(--muted);margin:0}
+button.small{padding:6px 10px;font-size:13px}
+.row-inline{display:inline-flex;align-items:center;gap:10px}
 @media (max-width:520px){.brand h1{font-size:36px}.note{font-size:92px}canvas#trace{height:320px}}
 @media (prefers-reduced-motion:reduce){.meter .needle{transition:none}}
 </style>
@@ -171,7 +173,7 @@ h2{font:600 15px var(--f-body)}
   </section>
 
   <section class="panel settings" aria-label="Detector settings">
-    <div class="head"><h2>Detector settings</h2><span class="eyebrow">saved in this browser</span></div>
+    <div class="head"><h2>Detector settings</h2><span class="row-inline"><button id="calUse" type="button" class="small" hidden>Use my calibration</button> <span class="eyebrow">saved in this browser</span></span></div>
     <div class="sets">
       <div class="set"><label for="sA4">Reference pitch <output id="oA4"></output></label>
         <input id="sA4" type="range" min="432" max="448" step="1"><p>Concert A. Shift it if your whistle plays consistently sharp or flat.</p></div>
@@ -190,6 +192,7 @@ h2{font:600 15px var(--f-body)}
 import { LOW, WIN, HOP, M_TOP, M_BOT, DEFAULT_SETTINGS, makeSession as newSession, feed, closeSeg, annotate as annotateSegs } from "./src/audio/detector.js";
 import { matchTruth } from "./src/audio/score.js";
 import { noteInfo } from "./src/whistle.js";
+import { loadCalibration } from "./src/calibration.js";
 (() => {
 const $ = s => document.querySelector(s);
 
@@ -406,12 +409,25 @@ const bind = (id, out, key, fmt) => {
   show();
   el.addEventListener("input", () => { settings[key] = parseFloat(el.value); show(); saveSettings(); placeGate(); reanalyze(); });
 };
-bind("#sA4", "#oA4", "a4", v => v + " Hz");
+bind("#sA4", "#oA4", "a4", v => (+v).toFixed(v % 1 ? 1 : 0) + " Hz");
 bind("#sGate", "#oGate", "gate", v => v + " dB");
 bind("#sClar", "#oClar", "clarity", v => v.toFixed(2));
 bind("#sGrace", "#oGrace", "grace", v => v + " ms");
 function placeGate(){ $("#gateMark").style.left = ((settings.gate + 70) / 70 * 100) + "%"; }
 placeGate();
+// Apply the noise gate and whistle tuning measured on the Calibrate page.
+{
+  const cal = loadCalibration(), btn = $("#calUse");
+  if (cal && (Number.isFinite(cal.a4) || Number.isFinite(cal.gateDb))) {
+    btn.hidden = false;
+    btn.title = [Number.isFinite(cal.a4) ? `A = ${cal.a4.toFixed(1)} Hz` : "", Number.isFinite(cal.gateDb) ? `gate ${cal.gateDb} dB` : ""].filter(Boolean).join(", ");
+    btn.addEventListener("click", () => {
+      if (Number.isFinite(cal.a4)) { settings.a4 = cal.a4; $("#sA4").value = cal.a4; $("#oA4").textContent = cal.a4.toFixed(1) + " Hz"; }
+      if (Number.isFinite(cal.gateDb)) { settings.gate = cal.gateDb; $("#sGate").value = cal.gateDb; $("#oGate").textContent = cal.gateDb + " dB"; }
+      saveSettings(); placeGate(); reanalyze(); status("Using your calibration: " + btn.title + ".");
+    });
+  }
+}
 
 /* ---------- Rendering ---------- */
 let C = {};

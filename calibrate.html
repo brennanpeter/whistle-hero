@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Calibrate</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;800&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* The game's dark stage palette: calibration is the first stop before playing. */
+:root{
+  --bg:#0D1210; --surface:#171E1B; --ink:#E2E8E4; --muted:#91A199; --line:#2B3732;
+  --brass:#DAAB4F; --brass-soft:#3B311F; --grace:#5FBBB1; --off:#E36B5D; --ok:#62BE7D;
+  --f-display:"Big Shoulders Display","Arial Narrow",Impact,sans-serif;
+  --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.5;
+  padding:24px max(16px,env(safe-area-inset-right)) 40px max(16px,env(safe-area-inset-left))}
+.wrap{max-width:720px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+h1{margin:0;font:800 46px/.95 var(--f-display);text-transform:uppercase;letter-spacing:.01em}
+h2{margin:0;font:600 17px var(--f-body)}
+p{margin:0}
+.muted{color:var(--muted)}
+a{color:var(--brass)}
+button,.btn{font:500 14px/1 var(--f-body);color:var(--ink);background:var(--surface);border:1px solid var(--line);
+  border-radius:6px;padding:10px 14px;cursor:pointer;display:inline-flex;align-items:center;gap:8px;white-space:nowrap;text-decoration:none}
+button:hover,.btn:hover{border-color:var(--muted)}
+button:focus-visible,.btn:focus-visible{outline:2px solid var(--brass);outline-offset:2px}
+button.primary{background:var(--brass);color:#16201D;border-color:var(--brass);font-weight:600}
+button:disabled{opacity:.45;cursor:default}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:12px}
+.step{display:grid;grid-template-columns:34px minmax(0,1fr);gap:4px 14px}
+.step .num{grid-row:span 3;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font:800 18px var(--f-display);background:var(--bg);color:var(--muted);border:1px solid var(--line)}
+.step.done .num{background:var(--ok);color:#16201D;border-color:var(--ok)}
+.step.active:not(.done) .num{background:var(--brass);color:#16201D;border-color:var(--brass)}
+.result{font:500 14px var(--f-mono);color:var(--grace)}
+.result.bad{color:var(--off)}
+/* live meter */
+.meter{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:center;font:12px var(--f-mono);color:var(--muted)}
+.bar{position:relative;height:10px;background:var(--bg);border-radius:5px;overflow:hidden}
+.bar i{position:absolute;inset:0 auto 0 0;width:0;background:var(--grace);transition:width .06s linear}
+.bar b{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--off);left:0}
+.heard{display:flex;align-items:baseline;gap:12px}
+.heard .n{font:800 56px/1 var(--f-display);min-width:2ch}
+.heard .c{font:500 15px var(--f-mono);color:var(--muted)}
+.count{font:800 40px/1 var(--f-display);color:var(--brass);min-height:40px}
+.summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.stat{background:var(--bg);border-radius:8px;padding:10px 12px}
+.stat b{display:block;font:800 26px/1 var(--f-display)}
+.stat span{font:500 11px var(--f-mono);letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.status{font:13px var(--f-mono);color:var(--muted);min-height:1.5em}
+@media (max-width:520px){h1{font-size:38px}.heard .n{font-size:44px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Calibrate</h1>
+    <p class="muted" style="margin-top:6px">About a minute. Fits the game to your room, your microphone and your whistle. Redo it if you change rooms, microphones or whistles.</p>
+  </header>
+  <p id="saved" class="status"></p>
+
+  <div class="card" id="intro">
+    <p>Set up as you'll play: same room, same microphone, whistle in hand. The browser will ask to use the microphone.</p>
+    <div class="row"><button class="primary" id="beginBtn" type="button">Start</button><a class="btn" href="play.html">Back to the game</a></div>
+    <p id="introMsg" class="status" role="status"></p>
+  </div>
+
+  <div class="card" id="live" hidden aria-label="What the microphone hears">
+    <div class="meter"><span>Level</span><div class="bar"><i id="lvl"></i><b id="gateMark"></b></div><span id="lvlDb">–</span></div>
+    <div class="heard"><span class="n" id="note">–</span><span class="c" id="cents"></span></div>
+  </div>
+
+  <div class="card" id="steps" hidden>
+    <div class="step" id="s1">
+      <span class="num">1</span>
+      <h2>Quiet room</h2>
+      <p class="muted">Stay still and quiet for 3 seconds so the game can hear your room's background noise.</p>
+      <div class="row" style="grid-column:2"><button id="quietBtn" type="button" class="primary">Measure the quiet</button><span class="result" id="r1" role="status"></span></div>
+    </div>
+    <div class="step" id="s2">
+      <span class="num">2</span>
+      <h2>Hold a note</h2>
+      <p class="muted">Play a steady low D (all six holes covered) for 3 seconds at your normal strength.</p>
+      <div class="row" style="grid-column:2"><button id="noteBtn" type="button">Measure my whistle</button><span class="result" id="r2" role="status"></span></div>
+    </div>
+    <div class="step" id="s3">
+      <span class="num">3</span>
+      <h2>Timing</h2>
+      <p class="muted"><b>On speakers:</b> the game beeps and listens for its own beeps. <b>On headphones:</b> play a short D on each click instead.</p>
+      <div class="row" style="grid-column:2">
+        <button id="speakerBtn" type="button">Beeps through speakers</button>
+        <button id="playBtn" type="button">Play along</button>
+        <span class="result" id="r3" role="status"></span>
+      </div>
+    </div>
+    <div class="count" id="count" aria-live="polite"></div>
+  </div>
+
+  <div class="card" id="done" hidden>
+    <h2>Your calibration</h2>
+    <div class="summary" id="summary"></div>
+    <div class="row"><button class="primary" id="saveBtn" type="button">Save and use it</button><a class="btn" href="play.html">Back to the game</a><button id="resetBtn" type="button">Clear saved calibration</button></div>
+    <p id="doneMsg" class="status" role="status"></p>
+  </div>
+</div>
+
+<script type="module">
+import { createListener } from "./src/audio/live.js";
+import { DEFAULT_SETTINGS } from "./src/audio/detector.js";
+import { noiseGate, whistleTuning, latencyFrom, loadCalibration, saveCalibration, clearCalibration, GATE_MIN } from "./src/calibration.js";
+import { noteInfo } from "./src/whistle.js";
+const $ = s => document.querySelector(s);
+const loopbackTest = location.hash === "#loopback"; // tests: route the beeps straight into the detector
+
+let ctx = null, ear = null, mic = "", rec = null, onsets = null, last = null;
+const result = { gateDb: null, noiseDb: null, a4: null, cents: null, latencyMs: null, latencyMethod: null };
+
+function showSaved() {
+  const c = loadCalibration();
+  $("#saved").textContent = c ? `Saved calibration from ${new Date(c.date).toLocaleDateString()}: ` + describe(c) : "No calibration saved yet. The game uses standard settings until you calibrate.";
+}
+function describe(c) {
+  const p = [];
+  if (Number.isFinite(c.gateDb)) p.push(`gate ${c.gateDb} dB`);
+  if (Number.isFinite(c.cents)) p.push(`whistle ${c.cents >= 0 ? "+" : "−"}${Math.abs(c.cents).toFixed(0)} cents`);
+  if (Number.isFinite(c.latencyMs)) p.push(`timing ${c.latencyMs} ms`);
+  return p.join(" · ") + (c.mic ? ` (${c.mic})` : "");
+}
+showSaved();
+
+$("#beginBtn").addEventListener("click", async () => {
+  $("#introMsg").textContent = "Asking for the microphone…";
+  try {
+    ctx = new AudioContext({ latencyHint: "interactive" }); await ctx.resume();
+    // gate off while calibrating: the quiet step needs every frame's level
+    ear = await createListener(ctx, { ...DEFAULT_SETTINGS, gate: -120 });
+    const m = await ear.useMicrophone(); mic = m.label || "";
+  } catch (e) {
+    $("#introMsg").textContent = e && e.name === "NotAllowedError" ? "The microphone was blocked. Allow it in the address bar and try again." : "No microphone is available here.";
+    return;
+  }
+  ear.on("frame", fr => { last = fr; if (rec) rec.push(fr); });
+  ear.on("onset", e => { if (onsets) onsets.push(e); });
+  $("#intro").hidden = true; $("#live").hidden = false; $("#steps").hidden = false;
+  setActive(1); meter();
+});
+
+function setActive(n) {
+  for (let i = 1; i <= 3; i++) $("#s" + i).classList.toggle("active", i === n);
+}
+function markDone(n, ok) { $("#s" + n).classList.toggle("done", ok); }
+
+// live meter: level against the gate, and the note heard with its tuning
+function meter() {
+  if (last) {
+    const lv = Math.max(0, Math.min(1, (last.db + 80) / 80));
+    $("#lvl").style.width = (lv * 100) + "%"; $("#lvlDb").textContent = Math.round(last.db) + " dB";
+    const gate = result.gateDb ?? DEFAULT_SETTINGS.gate;
+    $("#gateMark").style.left = ((gate + 80) / 80 * 100) + "%";
+    if (last.voiced && last.db > gate) {
+      const m = Math.round(last.midiF), c = (last.midiF - m) * 100;
+      $("#note").textContent = noteInfo(m).name;
+      $("#cents").textContent = `${c >= 0 ? "+" : "−"}${Math.abs(c).toFixed(0)} cents from A = 440`;
+    } else { $("#note").textContent = "–"; $("#cents").textContent = ""; }
+  }
+  requestAnimationFrame(meter);
+}
+
+const wait = s => new Promise(r => setTimeout(r, s * 1000));
+async function countdown(secs, label) {
+  for (let k = secs; k > 0; k--) { $("#count").textContent = `${label} ${k}`; await wait(1); }
+  $("#count").textContent = "";
+}
+const busy = on => document.querySelectorAll("#steps button").forEach(b => b.disabled = on);
+
+/* ---------- 1. quiet room ---------- */
+$("#quietBtn").addEventListener("click", async () => {
+  busy(true); setActive(1);
+  rec = []; await countdown(3, "Quiet…"); const frames = rec; rec = null;
+  const r = noiseGate(frames.map(f => f.db));
+  if (!r) { $("#r1").textContent = "Didn't get enough sound to measure. Try again."; $("#r1").className = "result bad"; busy(false); return; }
+  result.gateDb = r.gateDb; result.noiseDb = r.noiseDb;
+  $("#r1").className = "result";
+  $("#r1").textContent = `Room noise ${Math.round(r.noiseDb)} dB → gate ${r.gateDb} dB` + (r.noiseDb > -45 ? " (a noisy room: notes need to be louder than this)" : "");
+  markDone(1, true); setActive(2); busy(false); $("#noteBtn").classList.add("primary"); $("#quietBtn").classList.remove("primary"); finishIfReady();
+});
+
+/* ---------- 2. hold a note ---------- */
+$("#noteBtn").addEventListener("click", async () => {
+  busy(true); setActive(2);
+  await countdown(2, "Get ready…");
+  rec = []; await countdown(3, "Hold it…"); const frames = rec; rec = null;
+  const gate = result.gateDb ?? DEFAULT_SETTINGS.gate;
+  const r = whistleTuning(frames.filter(f => f.voiced && f.db > gate));
+  if (!r) { $("#r2").textContent = "Didn't catch a steady note. Hold one note for the whole 3 seconds and try again."; $("#r2").className = "result bad"; busy(false); return; }
+  result.a4 = r.a4; result.cents = r.cents;
+  // make sure the gate sits well below the whistle, even in a noisy room
+  let note = "";
+  if (result.gateDb != null && r.levelDb - result.gateDb < 15) {
+    result.gateDb = Math.max(GATE_MIN, Math.round(r.levelDb - 15));
+    note = ` · gate lowered to ${result.gateDb} dB to stay under your whistle`;
+  }
+  const word = Math.abs(r.cents) < 5 ? "in tune" : r.cents > 0 ? "sharp" : "flat";
+  $("#r2").className = "result";
+  $("#r2").textContent = `${noteInfo(r.midi).name} at ${r.cents >= 0 ? "+" : "−"}${Math.abs(r.cents).toFixed(0)} cents (${word}) → A = ${r.a4.toFixed(1)} Hz${note}`
+    + (r.spread > 25 ? " · the note wavered; a steadier one gives a better reading" : "");
+  markDone(2, true); setActive(3); busy(false); $("#noteBtn").classList.remove("primary"); $("#speakerBtn").classList.add("primary"); finishIfReady();
+});
+
+/* ---------- 3. timing ---------- */
+function click(at, strong) {
+  const len = 0.03, buf = ctx.createBuffer(1, Math.ceil(len * ctx.sampleRate), ctx.sampleRate), d = buf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (0.004 * ctx.sampleRate));
+  const src = ctx.createBufferSource(); src.buffer = buf;
+  const f = ctx.createBiquadFilter(); f.type = "bandpass"; f.frequency.value = strong ? 2400 : 1700; f.Q.value = 1.2;
+  const g = ctx.createGain(); g.gain.value = strong ? 0.9 : 0.6;
+  src.connect(f).connect(g).connect(ctx.destination); src.start(at);
+}
+// a short A (880 Hz) beep: a clear pitch in the whistle's range, which the detector reports like a note
+let loop = null;
+function beep(at) {
+  const o = ctx.createOscillator(), g = ctx.createGain();
+  o.frequency.value = 880;
+  g.gain.setValueAtTime(0, at); g.gain.linearRampToValueAtTime(0.5, at + 0.005);
+  g.gain.setValueAtTime(0.5, at + 0.14); g.gain.linearRampToValueAtTime(0, at + 0.16);
+  o.connect(g).connect(ctx.destination); o.start(at); o.stop(at + 0.2);
+  if (loopbackTest) { if (!loop) { loop = ctx.createDelay(1); loop.delayTime.value = 0.1; ear.input(loop); } g.connect(loop); }
+}
+
+$("#speakerBtn").addEventListener("click", async () => {
+  busy(true); setActive(3);
+  $("#r3").className = "result"; $("#r3").textContent = "Listening for the beeps… keep quiet.";
+  const t = ctx.currentTime + 0.8, sched = Array.from({ length: 8 }, (_, i) => t + i * 0.6);
+  onsets = []; sched.forEach(beep);
+  await wait(0.8 + 8 * 0.6 + 0.6);
+  const heard = onsets.filter(e => Math.abs(e.midi - 81) <= 1).map(e => e.t); onsets = null;
+  const r = latencyFrom(sched, heard, { mode: "speakers" });
+  timingResult(r, "speakers", "Couldn't hear the beeps through the microphone. Turn the speakers up, or use Play along if you're on headphones.");
+});
+
+$("#playBtn").addEventListener("click", async () => {
+  busy(true); setActive(3);
+  $("#r3").className = "result"; $("#r3").textContent = "Four clicks to count you in, then play a short D on each of the next eight.";
+  const beat = 0.75, t = ctx.currentTime + 0.6;
+  for (let i = 0; i < 4; i++) click(t + i * beat, i === 0);
+  const sched = Array.from({ length: 8 }, (_, i) => t + (4 + i) * beat);
+  sched.forEach((s, i) => click(s, i % 4 === 0));
+  onsets = [];
+  for (let k = 0; k < 12; k++) { $("#count").textContent = k < 4 ? `Count in… ${4 - k}` : `Play! ${k - 3} of 8`; await wait(beat); }
+  await wait(0.6); $("#count").textContent = "";
+  const heard = onsets.map(e => e.t); onsets = null;
+  const r = latencyFrom(sched, heard, { mode: "play", window: 0.3 });
+  timingResult(r, "play-along", "Didn't hear enough notes on the clicks. Play a short, clear note on each click and try again.");
+});
+
+function timingResult(r, method, failMsg) {
+  if (!r) { $("#r3").textContent = failMsg; $("#r3").className = "result bad"; busy(false); return; }
+  result.latencyMs = r.ms; result.latencyMethod = method;
+  $("#r3").className = "result";
+  $("#r3").textContent = `${r.ms} ms from click to hearing you (${r.matched} of ${r.of} heard` + (r.spreadMs > 30 ? `, spread ${r.spreadMs} ms: a steadier take would be more accurate` : "") + ")";
+  markDone(3, true); setActive(0); busy(false); finishIfReady();
+}
+
+/* ---------- save ---------- */
+function finishIfReady() {
+  const any = result.gateDb != null || result.a4 != null || result.latencyMs != null;
+  $("#done").hidden = !any;
+  const box = $("#summary"); box.innerHTML = "";
+  const stat = (v, l) => { const d = document.createElement("div"); d.className = "stat"; const b = document.createElement("b"); b.textContent = v; const s = document.createElement("span"); s.textContent = l; d.append(b, s); box.append(d); };
+  stat(result.gateDb != null ? `${result.gateDb} dB` : "–", "noise gate");
+  stat(result.cents != null ? `${result.cents >= 0 ? "+" : "−"}${Math.abs(result.cents).toFixed(0)} ¢` : "–", "whistle tuning");
+  stat(result.latencyMs != null ? `${result.latencyMs} ms` : "–", "timing delay");
+  $("#doneMsg").textContent = [result.gateDb, result.a4, result.latencyMs].some(v => v == null) ? "Steps you skip keep their current saved values (or the standard settings)." : "";
+}
+$("#saveBtn").addEventListener("click", () => {
+  const prev = loadCalibration() || {};
+  const merged = { ...prev, mic };
+  for (const [k, v] of Object.entries(result)) if (v != null) merged[k] = v;
+  if (saveCalibration(merged)) { $("#doneMsg").textContent = "Saved. The game will use it from now on."; showSaved(); }
+  else $("#doneMsg").textContent = "This browser wouldn't save it (private browsing?).";
+});
+$("#resetBtn").addEventListener("click", () => { clearCalibration(); showSaved(); $("#doneMsg").textContent = "Cleared. The game is back to standard settings."; });
+window.__calLoaded = true;
+</script>
+</body>
+</html>

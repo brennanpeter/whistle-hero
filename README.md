@@ -8,6 +8,8 @@ Playable, early. See [ROADMAP.md](ROADMAP.md) for what's done and what comes nex
 
 - **`play.html`**: the game. Pick a tune from your library and play along in the **finger-hole view**: each note is a row of the whistle's six holes rolling toward you (filled = covered), gold for the second octave, with a halo on each finger that moves and a flick for each cut or tap. The hit line lights up with the fingering the game hears you playing. Choose a speed from 10% to 200%, or let a simulated player play so you can watch. For practice, **Loop** repeats the tune until you end it, and **Loop and speed up** adds 5 bpm every third pass; the − / + buttons (or `[` and `]`) change the tempo from the next pass. The halos can be switched off in setup, in the pause menu or with `H`. A sheet music view is next.
 
+- **`calibrate.html`**: a one-minute calibration for your room, microphone and whistle: a noise gate from three seconds of quiet, your whistle's tuning from a held note, and the timing delay (beeps through the speakers, or play along on headphones). The game and Whistle Ear use it.
+
 - **`whistle-ear.html`**: a test bench for pitch detection. It runs the McLeod pitch method on live mic input or a recording, segments the stream into notes, and filters out overtone jumps and short "sliver" transients.
 - **`whistle-sim.html`**: a synthetic D whistle for testing without playing. Paste ABC from The Session, pick a player (clean, typical, beginner, noisy pub), and it plays the tune with tonguing, cuts, taps, rolls, slides, vibrato and deliberate mistakes. **Send to Whistle Ear** loads the clip into the test bench along with the notes it meant to play, so you can see what the detector got right and wrong.
 - **`tunes.html`**: the Tune Library. Paste ABC (one tune or a whole file) or open an `.abc` file. It checks whether each tune fits the D whistle (half-holed notes, range), suggests a transposition when one helps, keeps tunes with the same name together as settings, and shows the chart the game will play: notes, cuts and taps, bars, beats, parts and repeats. Favorites, search, and backup to a file are included. Tunes can be played with the simulator or sent to Whistle Ear.
@@ -51,6 +53,7 @@ The accuracy check renders 24 scenarios with Whistle Sim (each example tune with
 ```
 index.html              home page
 play.html               the game
+calibrate.html          noise gate, whistle tuning and timing calibration
 whistle-ear.html        detector test bench
 whistle-sim.html        simulator page
 tunes.html              Tune Library
@@ -64,6 +67,7 @@ src/game/engine.js      judging and scoring (no DOM, tested in Node)
 src/game/views/         ways of drawing the game: finger-view.js (three.js)
 src/audio/live.js       real-time detection from the mic or the simulator
 src/library.js          the tune library in browser storage
+src/calibration.js      calibration maths (gate, tuning, latency) and storage
 src/sim/whistle-synth.js
                         synthetic whistle and player model
 tools/                  dev server, WAV renderer, accuracy report
