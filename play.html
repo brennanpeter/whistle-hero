@@ -69,6 +69,7 @@ input[type=number]{font:14px var(--f-mono);color:var(--ink);background:var(--bg)
 .muted{color:var(--muted)}
 .field{display:flex;flex-direction:column;gap:6px}
 .field>label,.field>.lab{font-weight:500;display:flex;justify-content:space-between;gap:8px}
+.field>label.check{justify-content:flex-start;font-weight:400}
 .field output{font:13px var(--f-mono);color:var(--brass)}
 .field .hint{font-size:13px;color:var(--muted)}
 .seg{display:flex;gap:6px;flex-wrap:wrap}
@@ -115,7 +116,7 @@ a{color:var(--brass)}
       <span class="lab">View</span>
       <div class="seg" role="group" aria-label="View">
         <button type="button" data-mode="fingers" aria-pressed="true">Finger holes</button>
-        <button type="button" data-mode="sheet" aria-pressed="false" disabled title="Coming next">Sheet music (coming next)</button>
+        <button type="button" data-mode="sheet" aria-pressed="false">Sheet music</button>
       </div>
     </div>
     <div class="field">
@@ -133,7 +134,7 @@ a{color:var(--brass)}
     </div>
     <div class="field">
       <span class="lab">Display</span>
-      <label class="check"><input type="checkbox" id="halos"> Halos on fingers that move <span class="muted">(H while playing)</span></label>
+      <label class="check"><input type="checkbox" id="halos"> <span><span class="aidLabel">Halos on fingers that move</span> <span class="muted">(H while playing)</span></span></label>
     </div>
     <div class="field">
       <span class="lab">Who's playing</span>
@@ -176,7 +177,7 @@ a{color:var(--brass)}
 <!-- pause -->
 <div class="overlay" id="paused" hidden>
   <div class="card"><h2>Paused</h2>
-    <label class="check"><input type="checkbox" id="halosP"> Halos on fingers that move</label>
+    <label class="check"><input type="checkbox" id="halosP"> <span class="aidLabel">Halos on fingers that move</span></label>
     <div class="row"><button class="primary" id="resumeBtn" type="button">Resume</button><button id="endBtn" type="button">End and see results</button><button id="restartBtn" type="button">Restart</button><button id="quitBtn" type="button">Quit</button></div>
   </div>
 </div>
@@ -215,7 +216,6 @@ import { renderAbc, PRESETS, PROFILES } from "./src/sim/whistle-synth.js";
 import { noteInfo } from "./src/whistle.js";
 import { loadLibrary, saveLibrary, groupTunes } from "./src/library.js";
 import { loadCalibration, calibratedSettings } from "./src/calibration.js";
-import { createFingerView } from "./src/game/views/finger-view.js";
 const $ = s => document.querySelector(s);
 
 /* ---------- preferences ---------- */
@@ -260,6 +260,24 @@ function showLoop() {
 }
 showLoop();
 document.querySelectorAll("[data-loop]").forEach(b => b.addEventListener("click", () => { prefs.loop = b.dataset.loop; savePrefs(); showLoop(); }));
+// one engine, two views; the display toggle means halos in one and the fingering strip in the other
+// each view loads only when it's chosen (three.js for the finger holes, abcjs for the staff)
+const VIEWS = {
+  fingers: () => import("./src/game/views/finger-view.js").then(m => m.createFingerView),
+  sheet: () => import("./src/game/views/sheet-view.js").then(m => m.createSheetView),
+};
+const viewFailed = e => "The game couldn't load this view" + (/module|import|fetch/i.test(e.message || "")
+  ? ". Stop any running server, then run: npm install, then npm run dev, and reload this page." : ": " + (e.message || "unknown error"));
+const AID = { fingers: ["Halos on fingers that move", "Halos on", "Halos off"],
+  sheet: ["Fingerings under the staff", "Fingerings on", "Fingerings off"] };
+function showMode() {
+  if (!AID[prefs.mode]) prefs.mode = "fingers";
+  document.querySelectorAll("[data-mode]").forEach(b => b.setAttribute("aria-pressed", b.dataset.mode === prefs.mode));
+  document.querySelectorAll(".aidLabel").forEach(l => l.textContent = AID[prefs.mode][0]);
+  VIEWS[prefs.mode]().catch(e => msg(viewFailed(e))); // start loading it now
+}
+showMode();
+document.querySelectorAll("[data-mode]").forEach(b => b.addEventListener("click", () => { prefs.mode = b.dataset.mode; savePrefs(); showMode(); }));
 $("#halos").checked = prefs.halos;
 function setHalos(on) {
   prefs.halos = on; savePrefs();
@@ -313,6 +331,8 @@ async function start() {
   const tune = lib.tunes.find(t => t.id === prefs.tune);
   if (!tune) return;
   msg("Getting ready…");
+  let createView;
+  try { createView = await VIEWS[prefs.mode](); } catch (e) { msg(viewFailed(e)); return; }
   const parsed = parseAbc(tune.abc, { transpose: tune.transpose || 0 });
   const base = buildChart(parsed, { bpm: tune.bpm });
   const bpm0 = Math.round(base.qpm * prefs.speed / 100);
@@ -348,7 +368,7 @@ async function start() {
   const otherMic = prefs.input === "mic" && cal && cal.mic && micLabel && cal.mic !== micLabel;
   const game = createGame(chart);
   const stage = $("#stage"); stage.innerHTML = "";
-  const view = createFingerView(stage, chart, { halos: prefs.halos });
+  const view = createView(stage, chart, { parsed, halos: prefs.halos });
   S = { ctx, game, view, ear, t0, comp, outLat, tune, chart, parsed, sims: [], frame: null, ended: false, raf: 0,
         countIn, countBeat: beat, loop: prefs.loop, passes: [{ start: 0, end: chart.end, bpm: bpm0, n: 1 }], baseBpm: bpm0, pass: 0 };
   if (prefs.input === "sim") scheduleSim(S.passes[0]);
@@ -555,7 +575,7 @@ $("#menuBtn").addEventListener("click", () => { $("#results").hidden = true; $("
 addEventListener("keydown", e => {
   if (!S) return;
   if (e.key === "Escape" || e.key === " ") { e.preventDefault(); $("#paused").hidden ? pause() : resume(); }
-  else if (e.key === "h" || e.key === "H") { setHalos(!prefs.halos); flash(prefs.halos ? "Halos on" : "Halos off", "var(--grace)"); }
+  else if (e.key === "h" || e.key === "H") { setHalos(!prefs.halos); flash(AID[prefs.mode][prefs.halos ? 1 : 2], "var(--grace)"); }
   else if (e.key === "[" || e.key === "-") nudgeTempo(-5);
   else if (e.key === "]" || e.key === "=" || e.key === "+") nudgeTempo(5);
 });

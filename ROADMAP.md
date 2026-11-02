@@ -51,8 +51,8 @@ Whistle only for now (fiddle support would mean widening the detector's range; s
 - [x] Game page (`play.html`): pick a tune, speed 10–200%, play yourself or watch a simulated player, a one-bar count-in, a heads-up display, pause (Esc or Space), and results with stars and personal bests
 - [x] Practice looping: repeat the tune until ended, optionally 5 bpm faster every third pass; − / + (or `[` / `]`) change the tempo from the next pass; results report full passes and top tempo
 - [x] Halos on moving fingers can be switched off (setup, pause menu, or `H`)
-- [ ] **Sheet music view**: a single staff scrolling past a playhead, drawn with abcjs from the tune's ABC. A "ghost" notehead shows the note being played at its place on the staff, colored by right or wrong, with an optional fingering strip underneath.
-- [ ] Mode switch on the setup screen (the sheet music button is already there, disabled)
+- [x] **Sheet music view** (`src/game/views/sheet-view.js`): one staff scrolling past a playhead, drawn with abcjs from ABC the game writes out (`src/abc/write.js`: repeats played out, transposition applied, ties over bar lines, triplets, ornaments), so every note on the staff is a note in the chart. A "ghost" notehead shows the note being played at its place on the staff, green or red, with ledger lines, accidental and name. Judged notes turn gold, green or red, an optional strip of whistle fingerings runs underneath (`H`), and loop passes carry straight on without a new clef.
+- [x] Mode switch on the setup screen; each view loads only when it's chosen
 - [ ] Optional metronome during play, and a guide track for headphone users
 - [ ] Deploy to GitHub Pages so it runs over HTTPS anywhere
 

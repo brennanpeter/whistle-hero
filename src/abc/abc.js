@@ -140,6 +140,8 @@ export function parseAbc(text, opts = {}) {
       return;
     }
     if (lastNote && lastNote.t === "note" && lastNote.tie && lastNote.midi === midi) {
+      // a bar line crossed by the tie really falls inside the note: remember how far back
+      for (let k = items.indexOf(lastNote) + 1; k < items.length; k++) if (items[k].t === "bar") items[k].back = (items[k].back || 0) + len;
       lastNote.len += len; lastNote.tie = false;
       return;
     }
@@ -230,11 +232,12 @@ export function parseAbc(text, opts = {}) {
 
   // Expand repeats and 1st/2nd endings, recording bars, parts and passes as we go.
   const events = [], bars = [];
-  let repStart = 0, pass = 1, skip = false;
+  let repStart = 0, pass = 1, skip = false, barBack = 0;
   let pos = 0, barNo = -1, sinceBar = 0, newBar = true, part = 0, partNotes = 0, partBars = 0, newPart = false;
   const emit = it => {
     if (newPart) { part++; partNotes = 0; partBars = 0; newPart = false; newBar = true; }
-    if (newBar) { barNo++; partBars++; bars.push({ pos, bar: barNo, part, pass }); newBar = false; }
+    if (newBar) { barNo++; partBars++; bars.push({ pos: pos - barBack, bar: barNo, part, pass }); newBar = false; }
+    barBack = 0;
     events.push({ ...it, pos, bar: barNo, part, pass });
     pos += it.len; sinceBar++; partNotes++;
   };
@@ -242,6 +245,7 @@ export function parseAbc(text, opts = {}) {
   for (let k = 0; k < items.length; k++) {
     const it = items[k];
     if (it.t !== "bar") { if (!skip) emit(it); continue; }
+    barBack = it.back || 0;
     if (skip) {
       if (it.ending && it.ending !== 1) { skip = false; pass = 2; barLine(); }
       if (!skip && it.start) repStart = k + 1;

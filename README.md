@@ -1,17 +1,19 @@
 # Whistle Hero
 
-A Guitar Hero–style browser game for the D tin whistle. Notes scroll toward you in a three.js scene, you play them on a real whistle, and the game listens through your microphone to score your timing and pitch. Tunes come from [The Session](https://thesession.org).
+A Guitar Hero–style browser game for the D tin whistle. Notes scroll toward you, either as finger holes down a three.js highway or as sheet music on a scrolling staff; you play them on a real whistle, and the game listens through your microphone to score your timing and pitch. Tunes come from ABC you paste in.
 
 ## Status
 
 Playable, early. See [ROADMAP.md](ROADMAP.md) for what's done and what comes next.
 
-- **`play.html`**: the game. Pick a tune from your library and play along in the **finger-hole view**: each note is a row of the whistle's six holes rolling toward you (filled = covered), gold for the second octave, with a halo on each finger that moves and a flick for each cut or tap. The hit line lights up with the fingering the game hears you playing. Choose a speed from 10% to 200%, or let a simulated player play so you can watch. For practice, **Loop** repeats the tune until you end it, and **Loop and speed up** adds 5 bpm every third pass; the − / + buttons (or `[` and `]`) change the tempo from the next pass. The halos can be switched off in setup, in the pause menu or with `H`. A sheet music view is next.
+- **`play.html`**: the game. Pick a tune from your library and play along in the **finger-hole view**: each note is a row of the whistle's six holes rolling toward you (filled = covered), gold for the second octave, with a halo on each finger that moves and a flick for each cut or tap. The hit line lights up with the fingering the game hears you playing. Choose a speed from 10% to 200%, or let a simulated player play so you can watch. For practice, **Loop** repeats the tune until you end it, and **Loop and speed up** adds 5 bpm every third pass; the − / + buttons (or `[` and `]`) change the tempo from the next pass. The halos can be switched off in setup, in the pause menu or with `H`.
+
+  The **sheet music view** is for learning to read: the tune on one staff, repeats written out, scrolling past a playhead. A "ghost" notehead at the playhead shows the note you're playing at its place on the staff (green when right, red when not, with ledger lines, any sharp or flat, and its name), and notes turn gold, green or red as they're judged. Whistle fingerings can run under the staff (`H` toggles them). The staff is drawn with [abcjs](https://www.abcjs.net/).
 
 - **`calibrate.html`**: a one-minute calibration for your room, microphone and whistle: a noise gate from three seconds of quiet, your whistle's tuning from a held note, and the timing delay (beeps through the speakers, or play along on headphones). The game and Whistle Ear use it.
 
 - **`whistle-ear.html`**: a test bench for pitch detection. It runs the McLeod pitch method on live mic input or a recording, segments the stream into notes, and filters out overtone jumps and short "sliver" transients.
-- **`whistle-sim.html`**: a synthetic D whistle for testing without playing. Paste ABC from The Session, pick a player (clean, typical, beginner, noisy pub), and it plays the tune with tonguing, cuts, taps, rolls, slides, vibrato and deliberate mistakes. **Send to Whistle Ear** loads the clip into the test bench along with the notes it meant to play, so you can see what the detector got right and wrong.
+- **`whistle-sim.html`**: a synthetic D whistle for testing without playing. Paste ABC, pick a player (clean, typical, beginner, noisy pub), and it plays the tune with tonguing, cuts, taps, rolls, slides, vibrato and deliberate mistakes. **Send to Whistle Ear** loads the clip into the test bench along with the notes it meant to play, so you can see what the detector got right and wrong.
 - **`tunes.html`**: the Tune Library. Paste ABC (one tune or a whole file) or open an `.abc` file. It checks whether each tune fits the D whistle (half-holed notes, range), suggests a transposition when one helps, keeps tunes with the same name together as settings, and shows the chart the game will play: notes, cuts and taps, bars, beats, parts and repeats. Favorites, search, and backup to a file are included. Tunes can be played with the simulator or sent to Whistle Ear.
 
 Tunes come in as ABC you paste or open yourself. Whistle Hero doesn't download from tune sites. The Session's data license doesn't allow it to be processed with AI tools, which are used to build this project, so the project stays clear of it.
@@ -62,9 +64,10 @@ src/audio/detector.js   pitch detection, note segmentation, ornament and transie
 src/audio/score.js      compare detected notes with intended ones
 src/abc/abc.js          ABC parser (multi-tune files, metadata, repeats, endings, parts, ornaments…)
 src/abc/playability.js  half-hole and range check, transposition suggestions
+src/abc/write.js        write a parsed tune back out as ABC, played out, for the staff view
 src/chart/chart.js      game charts: timed notes, cuts and taps, bars and beats
 src/game/engine.js      judging and scoring (no DOM, tested in Node)
-src/game/views/         ways of drawing the game: finger-view.js (three.js)
+src/game/views/         ways of drawing the game: finger-view.js (three.js), sheet-view.js (abcjs)
 src/audio/live.js       real-time detection from the mic or the simulator
 src/library.js          the tune library in browser storage
 src/calibration.js      calibration maths (gate, tuning, latency) and storage
@@ -74,4 +77,4 @@ tools/                  dev server, WAV renderer, accuracy report
 test/                   node:test suites and the accuracy baseline
 ```
 
-Everything in `src/` except the views is a plain ES module with no dependencies, so the same code runs in the browser and in Node. The views use three.js.
+Everything in `src/` except the views is a plain ES module with no dependencies, so the same code runs in the browser and in Node. The finger-hole view uses three.js and the sheet music view uses abcjs; each loads only when it's chosen.
