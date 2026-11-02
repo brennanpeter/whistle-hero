@@ -133,6 +133,19 @@ a{color:var(--brass)}
       <span class="hint" id="loopHint"></span>
     </div>
     <div class="field">
+      <span class="lab">Metronome <span class="muted">(M while playing)</span></span>
+      <div class="seg" role="group" aria-label="Metronome">
+        <button type="button" data-metro="off" aria-pressed="true">Off</button>
+        <button type="button" data-metro="beat" aria-pressed="false">Every beat</button>
+        <button type="button" data-metro="bar" aria-pressed="false">Once a bar</button>
+      </div>
+    </div>
+    <div class="field">
+      <label for="clickVol">Click volume <output id="clickVolOut"></output></label>
+      <input id="clickVol" type="range" min="0" max="100" step="5">
+      <span class="hint">For the count-in and the metronome. With a microphone, a quieter click (or headphones) keeps it out of what the game hears.</span>
+    </div>
+    <div class="field">
       <span class="lab">Display</span>
       <label class="check"><input type="checkbox" id="halos"> <span><span class="aidLabel">Halos on fingers that move</span> <span class="muted">(H while playing)</span></span></label>
     </div>
@@ -178,6 +191,13 @@ a{color:var(--brass)}
 <div class="overlay" id="paused" hidden>
   <div class="card"><h2>Paused</h2>
     <label class="check"><input type="checkbox" id="halosP"> <span class="aidLabel">Halos on fingers that move</span></label>
+    <div class="field"><span class="lab">Metronome</span>
+      <div class="seg" role="group" aria-label="Metronome">
+      <button type="button" data-metro="off" aria-pressed="true">Off</button>
+      <button type="button" data-metro="beat" aria-pressed="false">Every beat</button>
+      <button type="button" data-metro="bar" aria-pressed="false">Once a bar</button>
+    </div>
+    </div>
     <div class="row"><button class="primary" id="resumeBtn" type="button">Resume</button><button id="endBtn" type="button">End and see results</button><button id="restartBtn" type="button">Restart</button><button id="quitBtn" type="button">Quit</button></div>
   </div>
 </div>
@@ -220,7 +240,7 @@ const $ = s => document.querySelector(s);
 
 /* ---------- preferences ---------- */
 const PREFS = "whistle-hero-play";
-let prefs = { tune: null, speed: 100, input: "mic", profile: "typical", monitor: true, latency: 0, mode: "fingers", loop: "off", halos: true, simArtic: "cuts" };
+let prefs = { tune: null, speed: 100, input: "mic", profile: "typical", monitor: true, latency: 0, mode: "fingers", loop: "off", halos: true, simArtic: "cuts", metro: "off", clickVol: 60 };
 try { Object.assign(prefs, JSON.parse(localStorage.getItem(PREFS) || "{}")); } catch (e) {}
 const savePrefs = () => { try { localStorage.setItem(PREFS, JSON.stringify(prefs)); } catch (e) {} };
 const urlTune = new URLSearchParams(location.search).get("tune");
@@ -298,6 +318,23 @@ const showSpeed = () => {
 };
 showSpeed();
 $("#speed").addEventListener("input", e => { prefs.speed = +e.target.value; showSpeed(); savePrefs(); });
+
+/* ---------- metronome ---------- */
+const METRO = { off: "Metronome off", beat: "Metronome: every beat", bar: "Metronome: once a bar" };
+function showMetro() {
+  if (!METRO[prefs.metro]) prefs.metro = "off";
+  document.querySelectorAll("[data-metro]").forEach(b => b.setAttribute("aria-pressed", b.dataset.metro === prefs.metro));
+  $("#clickVolOut").textContent = prefs.clickVol + "%";
+}
+function setMetro(m) {
+  prefs.metro = m; savePrefs(); showMetro();
+  if (S && m === "off") silenceMetro();   // clicks already queued in the next moment are cancelled
+  if (S) S.metroRedo = true;              // and a change of mode applies from the next beat
+}
+$("#clickVol").value = prefs.clickVol;
+$("#clickVol").addEventListener("input", e => { prefs.clickVol = +e.target.value; savePrefs(); showMetro(); });
+document.querySelectorAll("[data-metro]").forEach(b => b.addEventListener("click", () => setMetro(b.dataset.metro)));
+showMetro();
 $("#profile").addEventListener("change", e => { prefs.profile = e.target.value; savePrefs(); });
 $("#monitor").addEventListener("change", e => { prefs.monitor = e.target.checked; savePrefs(); });
 $("#latency").addEventListener("change", e => { prefs.latency = Math.max(-300, Math.min(300, +e.target.value || 0)); e.target.value = prefs.latency; savePrefs(); });
@@ -370,6 +407,7 @@ async function start() {
   const stage = $("#stage"); stage.innerHTML = "";
   const view = createView(stage, chart, { parsed, halos: prefs.halos });
   S = { ctx, game, view, ear, t0, comp, outLat, tune, chart, parsed, sims: [], frame: null, ended: false, raf: 0,
+        beats: chart.beats.slice(), beatI: 0, metroSrc: [], metroRedo: false,
         countIn, countBeat: beat, loop: prefs.loop, passes: [{ start: 0, end: chart.end, bpm: bpm0, n: 1 }], baseBpm: bpm0, pass: 0 };
   if (prefs.input === "sim") scheduleSim(S.passes[0]);
   if (location.hash === "#debug") window.__game = S; // for tests and troubleshooting
@@ -394,23 +432,48 @@ async function start() {
 }
 
 // a short woodblock-like click: noise, no clear pitch, so the detector ignores it
-function click(ctx, at, strong) {
+function click(ctx, at, strong, vol = prefs.clickVol / 60) {
   const len = 0.03, buf = ctx.createBuffer(1, Math.ceil(len * ctx.sampleRate), ctx.sampleRate), d = buf.getChannelData(0);
   for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (0.004 * ctx.sampleRate));
   const src = ctx.createBufferSource(); src.buffer = buf;
   const f = ctx.createBiquadFilter(); f.type = "bandpass"; f.frequency.value = strong ? 2400 : 1700; f.Q.value = 1.2;
-  const g = ctx.createGain(); g.gain.value = strong ? 0.9 : 0.6;
+  const g = ctx.createGain(); g.gain.value = (strong ? 0.9 : 0.6) * vol;
   src.connect(f).connect(g).connect(ctx.destination); src.start(at);
+  return src;
+}
+
+// The metronome clicks on the chart's beat grid (bar starts accented), scheduled a moment ahead on
+// the audio clock so it stays steady however the page is doing. Beats are heard at t0 + beat.t,
+// the same way the count-in is. Loop passes add their own beats, so tempo changes follow along.
+const METRO_AHEAD = 0.3;
+function scheduleMetro(ahead = METRO_AHEAD) {
+  const { ctx, t0, beats } = S, now = ctx.currentTime;
+  if (S.metroRedo) { // the mode changed: drop what's queued and pick up again from now
+    silenceMetro(); S.metroRedo = false;
+    while (S.beatI > 0 && t0 + beats[S.beatI - 1].t > now) S.beatI--;
+  }
+  while (S.beatI < beats.length && t0 + beats[S.beatI].t < now + ahead) {
+    const b = beats[S.beatI++], at = t0 + b.t;
+    if (at < now || prefs.metro === "off" || prefs.clickVol === 0) continue;
+    if (prefs.metro === "beat" || b.strong) S.metroSrc.push({ src: click(ctx, at, b.strong), at });
+  }
+  while (S.metroSrc.length && S.metroSrc[0].at < now - 0.1) S.metroSrc.shift();
+}
+function silenceMetro() {
+  if (!S) return;
+  for (const c of S.metroSrc) if (c.at > S.ctx.currentTime) try { c.src.stop(); } catch (e) {}
+  S.metroSrc = [];
 }
 
 /* ---------- looping ---------- */
 // Tempo for pass n: the base tempo (which − / + change), plus 5 bpm every third pass when speeding up.
 const bpmFor = n => Math.max(5, S.baseBpm + (S.loop === "ramp" ? 5 * Math.floor((n - 1) / 3) : 0));
 function appendPass() {
+  scheduleMetro(2.5); // laying out a pass (and rendering the simulator's audio) can stall the page
   const last = S.passes[S.passes.length - 1], n = last.n + 1, bpm = bpmFor(n);
   const part = shiftChart(buildChart(S.parsed, { bpm }), last.end,
     { firstNote: S.game.notes.length, firstOrnament: S.game.ornaments.length, loop: n });
-  S.game.extend(part); S.view.addChart(part);
+  S.game.extend(part); S.view.addChart(part); S.beats.push(...part.beats);
   const p = { start: last.end, end: part.end, bpm, n }; S.passes.push(p);
   if (prefs.input === "sim") scheduleSim(p);
   showPassInfo();
@@ -489,6 +552,7 @@ function expectedAt(t) {
 function loop() {
   if (!S) return;
   const { ctx, t0, outLat, game, view, chart } = S;
+  scheduleMetro();
   const t = ctx.currentTime - t0 - outLat; // what the player is hearing now, in game time
   // Only declare a miss once the detector has listened past the note's window. Going by the clock
   // instead would call notes missed whenever the page stalls (rendering, garbage collection) while
@@ -576,6 +640,10 @@ addEventListener("keydown", e => {
   if (!S) return;
   if (e.key === "Escape" || e.key === " ") { e.preventDefault(); $("#paused").hidden ? pause() : resume(); }
   else if (e.key === "h" || e.key === "H") { setHalos(!prefs.halos); flash(AID[prefs.mode][prefs.halos ? 1 : 2], "var(--grace)"); }
+  else if (e.key === "m" || e.key === "M") {
+    const next = { off: "beat", beat: "bar", bar: "off" }[prefs.metro];
+    setMetro(next); flash(METRO[next], "var(--grace)");
+  }
   else if (e.key === "[" || e.key === "-") nudgeTempo(-5);
   else if (e.key === "]" || e.key === "=" || e.key === "+") nudgeTempo(5);
 });
