@@ -93,3 +93,38 @@ export function latencyFrom(scheduled, heard, { mode = "speakers", window = 0.45
   const spreadMs = (quantile(delays, 0.75) - quantile(delays, 0.25)) * 1000;
   return { ms: Math.round(ms), spreadMs: Math.round(spreadMs), matched: delays.length, of: scheduled.length };
 }
+
+/**
+ * A quick sanity check of a few seconds of microphone audio (the mic check on the Calibrate page).
+ * Levels are in the detector's dB (RMS over ~23 ms windows), so they compare with the noise gate.
+ * Returns the levels plus a list of problems in plain words:
+ *   silent — nothing at all came through (a muted or disconnected mic)
+ *   noisy  — even the quietest moments are loud: usually a mic turned up too far (or a loud room)
+ *   quiet  — nothing loud happened: the wrong mic, or turned down too far
+ *   clip   — the loudest moments hit the top and distorted: turn the mic down
+ */
+export const CHECK_NOISY_DB = -45, CHECK_QUIET_DB = -40, CLIP_LEVEL = 0.985;
+export function micCheck(samples, sr, win = 1024) {
+  const dbs = [];
+  let peak = 0, clipped = 0, nonzero = 0;
+  for (let i = 0; i < samples.length; i++) {
+    const a = Math.abs(samples[i]);
+    if (a > peak) peak = a;
+    if (a >= CLIP_LEVEL) clipped++;
+    if (a > 1e-7) nonzero++;
+  }
+  for (let i = 0; i + win <= samples.length; i += win) {
+    let e = 0; for (let k = i; k < i + win; k++) e += samples[k] * samples[k];
+    dbs.push(20 * Math.log10(Math.sqrt(e / win) + 1e-9));
+  }
+  const quietDb = dbs.length ? quantile(dbs, 0.1) : -180, loudDb = dbs.length ? quantile(dbs, 0.98) : -180;
+  const peakDb = 20 * Math.log10(peak + 1e-9);
+  const problems = [];
+  if (nonzero < samples.length * 0.01 || loudDb < -100) problems.push("silent");
+  else {
+    if (quietDb > CHECK_NOISY_DB) problems.push("noisy");
+    if (loudDb < CHECK_QUIET_DB) problems.push("quiet");
+    if (clipped >= Math.max(3, sr * 0.0005)) problems.push("clip");
+  }
+  return { seconds: samples.length / sr, quietDb, loudDb, peakDb, clipped, problems };
+}

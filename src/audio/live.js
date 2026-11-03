@@ -6,6 +6,7 @@
 //   ear.on("onset", ({ midi, t }) => …);   // a note started at ctx time t
 //   ear.on("grace", ({ midi, t }) => …);   // a cut or tap was heard
 //   ear.on("frame", frame => …);           // every analysis frame (pitch, level), for meters
+//   ear.on("samples", ({ d, t }) => …);    // the raw audio, a block at a time (d ends at ctx time t)
 //   await ear.useMicrophone();             // or: ear.input(someAudioNode)
 //   ear.stop();
 import { WIN, HOP, DEFAULT_SETTINGS, makeSession, feed } from "./detector.js";
@@ -18,11 +19,12 @@ const loaded = new WeakSet();
 
 export async function createListener(ctx, settings = { ...DEFAULT_SETTINGS }) {
   const S = makeSession(settings), win = new Float32Array(WIN), sr = ctx.sampleRate;
-  const handlers = { onset: [], grace: [], frame: [] };
+  const handlers = { onset: [], grace: [], frame: [], samples: [] };
   const emit = (type, e) => { for (const f of handlers[type]) f(e); };
   let lastCur = null, announced = new WeakSet(), segsSeen = 0, stream = null;
 
   function chunk(d, tEnd) {
+    if (handlers.samples.length) emit("samples", { d, t: tEnd });
     win.copyWithin(0, HOP); win.set(d, WIN - HOP);
     const fr = feed(S, tEnd - WIN / (2 * sr), win, sr);
     emit("frame", fr);

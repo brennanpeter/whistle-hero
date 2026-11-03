@@ -55,6 +55,10 @@ button:disabled{opacity:.45;cursor:default}
 .stat b{display:block;font:800 26px/1 var(--f-display)}
 .stat span{font:500 11px var(--f-mono);letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
 .status{font:13px var(--f-mono);color:var(--muted);min-height:1.5em}
+.micname{font:13px var(--f-mono);color:var(--muted)}
+.micname b{color:var(--ink);font-weight:500}
+#wave{display:block;width:100%;height:64px;background:var(--bg);border-radius:6px}
+.result.warn{color:var(--brass)}
 @media (max-width:520px){h1{font-size:38px}.heard .n{font-size:44px}}
 </style>
 </head>
@@ -73,8 +77,17 @@ button:disabled{opacity:.45;cursor:default}
   </div>
 
   <div class="card" id="live" hidden aria-label="What the microphone hears">
+    <p class="micname">Microphone: <b id="micName">–</b></p>
     <div class="meter"><span>Level</span><div class="bar"><i id="lvl"></i><b id="gateMark"></b></div><span id="lvlDb">–</span></div>
     <div class="heard"><span class="n" id="note">–</span><span class="c" id="cents"></span></div>
+  </div>
+
+  <div class="card" id="check" hidden>
+    <h2>Mic check <span class="muted" style="font-weight:400">(optional)</span></h2>
+    <p class="muted">Record five seconds and listen back to hear exactly what the game hears. Stay quiet for a moment, then play a few notes.</p>
+    <div class="row"><button id="recBtn" type="button">Record 5 seconds</button><button id="listenBtn" type="button" disabled>Play it back</button></div>
+    <canvas id="wave" hidden aria-label="The recording's waveform"></canvas>
+    <p class="result" id="checkMsg" role="status"></p>
   </div>
 
   <div class="card" id="steps" hidden>
@@ -114,7 +127,7 @@ button:disabled{opacity:.45;cursor:default}
 <script type="module">
 import { createListener } from "./src/audio/live.js";
 import { DEFAULT_SETTINGS } from "./src/audio/detector.js";
-import { noiseGate, whistleTuning, latencyFrom, loadCalibration, saveCalibration, clearCalibration, GATE_MIN } from "./src/calibration.js";
+import { noiseGate, whistleTuning, latencyFrom, loadCalibration, saveCalibration, clearCalibration, GATE_MIN, micCheck } from "./src/calibration.js";
 import { noteInfo } from "./src/whistle.js";
 const $ = s => document.querySelector(s);
 const loopbackTest = location.hash === "#loopback"; // tests: route the beeps straight into the detector
@@ -147,8 +160,10 @@ $("#beginBtn").addEventListener("click", async () => {
     return;
   }
   ear.on("frame", fr => { last = fr; if (rec) rec.push(fr); });
+  ear.on("samples", ({ d }) => { if (take) take.push(d); });
+  $("#micName").textContent = mic || "(the browser didn't give its name)";
   ear.on("onset", e => { if (onsets) onsets.push(e); });
-  $("#intro").hidden = true; $("#live").hidden = false; $("#steps").hidden = false;
+  $("#intro").hidden = true; $("#live").hidden = false; $("#check").hidden = false; $("#steps").hidden = false;
   setActive(1); meter();
 });
 
@@ -178,7 +193,71 @@ async function countdown(secs, label) {
   for (let k = secs; k > 0; k--) { $("#count").textContent = `${label} ${k}`; await wait(1); }
   $("#count").textContent = "";
 }
-const busy = on => document.querySelectorAll("#steps button").forEach(b => b.disabled = on);
+// one thing at a time: a mic check and a calibration step would hear each other
+const busy = on => {
+  document.querySelectorAll("#steps button, #check button").forEach(b => b.disabled = on);
+  if (!on) $("#listenBtn").disabled = !recording;
+};
+
+/* ---------- mic check: record a few seconds and play them back ---------- */
+let take = null, recording = null, playing = null;
+const fmtDb = v => `${Math.round(v)} dB`;
+const CHECK_MSG = {
+  silent: () => "Nothing came through. The microphone may be muted, or the browser opened a different input than you expected (its name is shown above).",
+  noisy: r => `Even the quiet moments are loud (${fmtDb(r.quietDb)}). If the room really was quiet, the microphone's input volume is probably turned up too far: lower it in your computer's sound settings (and any "mic boost"), then record again.`,
+  quiet: r => `Nothing loud came through (the loudest was ${fmtDb(r.loudDb)}). Is this the right microphone? Play closer to it, or turn its input volume up.`,
+  clip: () => "The loudest moments hit the top and distorted. Turn the microphone's input volume down a little.",
+};
+$("#recBtn").addEventListener("click", async () => {
+  stopPlayback(); busy(true);
+  const msg = $("#checkMsg"); msg.className = "result";
+  take = [];
+  for (let k = 5; k > 0; k--) { msg.textContent = `Recording… ${k}`; await wait(1); }
+  const chunks = take; take = null;
+  const n = chunks.reduce((a, c) => a + c.length, 0), all = new Float32Array(n);
+  let o = 0; for (const c of chunks) { all.set(c, o); o += c.length; }
+  recording = all;
+  const r = micCheck(all, ctx.sampleRate);
+  msg.className = "result" + (r.problems.length ? (r.problems.includes("silent") || r.problems.includes("noisy") ? " bad" : " warn") : "");
+  msg.textContent = r.problems.length ? r.problems.map(p => CHECK_MSG[p](r)).join(" ")
+    : `Sounds healthy: quiet moments at ${fmtDb(r.quietDb)}, loudest ${fmtDb(r.loudDb)}. Play it back to hear it for yourself.`;
+  drawWave(); busy(false);
+  $("#recBtn").textContent = "Record again";
+});
+$("#listenBtn").addEventListener("click", () => {
+  if (playing) { stopPlayback(); return; }
+  const buf = ctx.createBuffer(1, recording.length, ctx.sampleRate); buf.copyToChannel(recording, 0);
+  const src = ctx.createBufferSource(); src.buffer = buf; src.connect(ctx.destination);
+  playing = { src, at: ctx.currentTime + 0.05 }; src.start(playing.at);
+  src.onended = () => { if (playing && playing.src === src) stopPlayback(); };
+  document.querySelectorAll("#steps button, #recBtn").forEach(b => b.disabled = true);
+  $("#listenBtn").textContent = "Stop";
+  const tick = () => { if (!playing) return; drawWave(ctx.currentTime - playing.at); requestAnimationFrame(tick); };
+  tick();
+});
+function stopPlayback() {
+  if (!playing) return;
+  try { playing.src.stop(); } catch (e) {}
+  playing = null; $("#listenBtn").textContent = "Play it back"; busy(false); drawWave();
+}
+// the recording as a waveform (each pixel column: the loudest sample there, −80 to 0 dB), with a playback cursor
+function drawWave(at = null) {
+  const cv = $("#wave"); cv.hidden = !recording; if (!recording) return;
+  const dpr = devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight;
+  if (cv.width !== Math.round(W * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
+  const g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+  const css = getComputedStyle(document.documentElement), col = v => css.getPropertyValue(v).trim();
+  const per = recording.length / W, mid = H / 2;
+  for (let x = 0; x < W; x++) {
+    let pk = 0; for (let i = Math.floor(x * per), e = Math.floor((x + 1) * per); i < e; i++) { const a = Math.abs(recording[i]); if (a > pk) pk = a; }
+    // on a decibel scale, like the level meter, so background hiss shows up as a band
+    const h = Math.max(1, Math.max(0, Math.min(1, (20 * Math.log10(pk + 1e-9) + 80) / 80)) * (mid - 2));
+    g.fillStyle = pk >= 0.985 ? col("--off") : col("--grace");
+    g.fillRect(x, mid - h, 1, 2 * h);
+  }
+  if (at != null) { const x = at / (recording.length / ctx.sampleRate) * W; g.fillStyle = col("--ink"); g.fillRect(Math.round(x), 0, 2, H); }
+}
+addEventListener("resize", () => drawWave());
 
 /* ---------- 1. quiet room ---------- */
 $("#quietBtn").addEventListener("click", async () => {

@@ -26,6 +26,7 @@ Rough order of work for Whistle Hero. Each phase leans on the one before it. Che
 - [ ] **Echo-heavy rooms.** When the echo is within about 5 dB of the direct sound, the previous note's echo and the new note blur inside one analysis window. The pitch reads off by a semitone, or the frame isn't clear enough to count. A fix needs a different approach, such as subtracting the previous note's harmonics after each onset, or a shorter second-pass window around onsets to get ornament pitches. A close mic is the practical answer for now.
 - [x] **Latency calibration.** The Calibrate page measures the delay from the game's click to the detector hearing you, either automatically (beeps through the speakers, heard back through the mic) or by playing along with headphones. The game uses it in place of the browser's own latency estimates.
 - [x] **Adaptive noise gate.** Three seconds of quiet set the gate 8 dB above the room's noise (ignoring a stray cough), and it's lowered if it would sit too close to your whistle's level.
+- [x] **Mic check.** The Calibrate page names the microphone the browser opened, records five seconds to play back, draws the waveform, and flags a silent mic, hiss even in the quiet moments (usually an input turned up too far), a take that's too quiet, or clipping.
 - [x] **Whistle tuning calibration.** A held note (low D recommended; any works) sets the reference pitch, so a sharp or flat whistle isn't misread. Whistle Ear has a "Use my calibration" button too.
 
 ## Phase 2: Tunes (paste your own ABC)

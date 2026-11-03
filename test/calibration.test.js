@@ -80,3 +80,21 @@ test("calibrated settings override the defaults", () => {
   assert.deepEqual(s, { a4: 442.5, gate: -58, clarity: 0.88 });
   assert.deepEqual(calibratedSettings({ a4: 440, gate: -50 }, null), { a4: 440, gate: -50 });
 });
+
+test("micCheck: tells a healthy take from a silent, hissy, clipped or too-quiet one", async () => {
+  const { micCheck } = await import("../src/calibration.js");
+  const sr = 48000, n = sr * 5;
+  let seed = 3; const noise = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296) * 2 - 1;
+  // background noise at `floor`, plus two seconds of a whistle-ish 587 Hz tone at amplitude `amp`
+  const take = (floor, amp, hard = 1) => Float32Array.from({ length: n }, (_, i) => {
+    const tone = i > sr && i < 3 * sr ? amp * Math.sin(2 * Math.PI * 587 * i / sr) : 0;
+    return Math.max(-hard, Math.min(hard, floor * noise() + tone));
+  });
+  const ok = micCheck(take(0.002, 0.2), sr);
+  assert.deepEqual(ok.problems, [], JSON.stringify(ok));
+  assert.ok(ok.quietDb < -50 && ok.loudDb > -20);
+  assert.deepEqual(micCheck(new Float32Array(n), sr).problems, ["silent"]);
+  assert.deepEqual(micCheck(take(0.05, 0.2), sr).problems, ["noisy"], "a boosted laptop mic: loud hiss even when quiet");
+  assert.deepEqual(micCheck(take(0.002, 1.6, 0.999), sr).problems, ["clip"]);
+  assert.deepEqual(micCheck(take(0.0005, 0.005), sr).problems, ["quiet"]);
+});
