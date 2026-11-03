@@ -19,7 +19,10 @@ const COLORS = {
 };
 
 export function createFingerView(container, chart, opts = {}) {
-  const { speed = 7, lookahead = 4 } = opts;
+  // Notes are laid out by the beat, not the clock: a quarter note always takes QUARTER units of road
+  // (3.5, which is how the road looked at 120 bpm), so a fast tune comes at you faster instead of
+  // bunching up. VIEW is how much road is in sight: two bars of 4/4.
+  const QUARTER = opts.spacing ?? 3.5, VIEW = opts.view ?? 28;
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
   renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
   renderer.setClearColor(COLORS.bg);
@@ -28,7 +31,7 @@ export function createFingerView(container, chart, opts = {}) {
   renderer.domElement.setAttribute("aria-hidden", "true");
 
   const scene = new THREE.Scene();
-  const FOG_NEAR = speed * lookahead * 0.7 + 4, FOG_FAR = speed * lookahead * 1.15 + 4;
+  const FOG_NEAR = VIEW * 0.7 + 4, FOG_FAR = VIEW * 1.15 + 4;
   scene.fog = new THREE.Fog(COLORS.bg, FOG_NEAR, FOG_FAR);
   const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 300);
   // looking down the highway; puts the hit line about a fifth of the way up the screen
@@ -40,7 +43,7 @@ export function createFingerView(container, chart, opts = {}) {
   const keep = x => { disposables.push(x); return x; };
 
   // road and lanes
-  const roadLen = speed * lookahead * 1.3 + 10;
+  const roadLen = VIEW * 1.3 + 10;
   const road = new THREE.Mesh(keep(flat(new THREE.PlaneGeometry(8.6, roadLen))), keep(new THREE.MeshBasicMaterial({ color: COLORS.road })));
   road.position.set(0, -0.02, -roadLen / 2 + 3);
   scene.add(road);
@@ -49,9 +52,16 @@ export function createFingerView(container, chart, opts = {}) {
     lane.position.set(x, -0.015, -roadLen / 2 + 3); scene.add(lane);
   }
 
-  // everything that scrolls lives in `track`; notes sit at z = -t * speed
+  // Everything that scrolls lives in `track`; a moment t sits at z = -dist(t). Each part (a loop pass)
+  // brings its own tempo, so dist runs piecewise through them: { t0, d0, rate (road units a second) }.
   const track = new THREE.Group(); scene.add(track);
-  const zOf = t => -t * speed;
+  const segs = [];
+  const dist = t => {
+    let s = segs[0];
+    for (let i = 1; i < segs.length && segs[i].t0 <= t; i++) s = segs[i];
+    return s ? s.d0 + (t - s.t0) * s.rate : 0;
+  };
+  const zOf = t => -dist(t);
 
   const fingering = midi => { const inf = noteInfo(midi); return inf.inScale ? FINGERINGS[inf.pc] : null; };
   const discGeo = keep(flat(new THREE.CircleGeometry(0.34, 28)));
@@ -82,6 +92,8 @@ export function createFingerView(container, chart, opts = {}) {
   let showHalos = opts.halos !== false;
 
   function addChart(part) {
+    const t0 = part.start ?? 0, rate = QUARTER * (part.qpm || 120) / 60;
+    segs.push({ t0, d0: segs.length ? dist(t0) : 0, rate });
     const group = new THREE.Group(); track.add(group);
     const own = []; // geometry and materials to free with this part
     const mine = x => { own.push(x); return x; };
@@ -197,7 +209,7 @@ export function createFingerView(container, chart, opts = {}) {
 
   function update(t, live) {
     now = t;
-    track.position.z = t * speed;
+    track.position.z = dist(t);
     prune(t);
     // what the player is playing right now, shown on the hit line
     const heard = live && live.midi != null ? fingering(live.midi) : null;
@@ -246,6 +258,7 @@ export function createFingerView(container, chart, opts = {}) {
   return {
     update, onEvent, resize,
     addChart,                       // more of the tune (the next pass when looping)
+    dist,                           // for tests: game time → distance along the road
     setHalos(on) { showHalos = !!on; for (const p of parts) p.halos.visible = showHalos; },
     destroy() {
       cancelAnimationFrame(raf); ro.disconnect();
