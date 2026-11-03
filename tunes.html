@@ -95,7 +95,8 @@ input[type=search],input[type=number]{font:14px var(--f-body);color:var(--ink);b
 .controls label{font-size:14px;display:inline-flex;align-items:center;gap:6px}
 .controls input[type=number]{width:80px}
 
-.chartwrap{overflow-x:auto;border-radius:6px;background:var(--trace-bg)}
+.chartwrap{overflow-x:auto;border-radius:6px;background:var(--trace-bg);position:relative}
+.chartwrap .cursor{position:absolute;left:0;top:22px;height:256px;width:2px;margin-left:-1px;background:var(--ink);pointer-events:none;will-change:transform}
 canvas#chart{display:block;height:300px}
 .legend{display:flex;flex-wrap:wrap;gap:12px;font:12px var(--f-mono);color:var(--muted)}
 .legend i{display:inline-block;width:14px;height:7px;border-radius:2px;margin-right:5px;vertical-align:middle}
@@ -167,7 +168,7 @@ details summary{cursor:pointer;font-weight:500}
             <span><i style="background:var(--ink);width:3px;height:12px"></i>bar</span>
           </span>
         </div>
-        <div class="chartwrap"><canvas id="chart"></canvas></div>
+        <div class="chartwrap"><canvas id="chart"></canvas><div class="cursor" hidden></div></div>
         <p id="dChartInfo" class="hint"></p>
       </div>
 
@@ -402,7 +403,7 @@ readTokens();
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { readTokens(); renderDetail(); });
 const M_TOP = 98.6, M_BOT = 73.4, SCALE_PC = [0, 2, 4, 5, 7, 9, 10, 11], PX_PER_S = 110;
 let drawn = null;
-function drawChart(chart, check, cursor = null) {
+function drawChart(chart, check) {
   drawn = { chart, check };
   const cv = $("#chart"), wrap = cv.parentElement, dpr = devicePixelRatio || 1;
   const L = 40, R = 16, T = 22, B = 22, H = 300;
@@ -450,14 +451,36 @@ function drawChart(chart, check, cursor = null) {
     const yy = y(o.midi), xx = x(o.t);
     g.fillStyle = off.has(o.midi) ? C.off : C.grace; g.fillRect(xx, yy - 3.5, Math.max(4, o.dur * PX_PER_S), 7);
   }
-  if (cursor != null) { const xx = Math.round(x(cursor)) + 0.5; g.strokeStyle = C.ink; g.lineWidth = 1.5; g.beginPath(); g.moveTo(xx, T); g.lineTo(xx, T + ph); g.stroke();
-    if (xx < wrap.scrollLeft + 60 || xx > wrap.scrollLeft + wrap.clientWidth - 60) wrap.scrollLeft = xx - 80; }
 }
+const CHART_L = 40; // the chart's left margin (the note names), where time 0 sits
 addEventListener("resize", () => { if (drawn) drawChart(drawn.chart, drawn.check); });
 
 /* ---------- playback and hand-off ---------- */
 let play = null;
-function stop() { if (!play) return; try { play.src.stop(); } catch (e) {} play.ctx.close(); play = null; $("#playBtn").textContent = "Listen"; $("#playBtn").classList.remove("live"); if (drawn) drawChart(drawn.chart, drawn.check); }
+function stop() { if (!play) return; try { play.src.stop(); } catch (e) {} play.ctx.close(); play = null; $("#playBtn").textContent = "Listen"; $("#playBtn").classList.remove("live"); $(".chartwrap .cursor").hidden = true; }
+
+// While listening, a playhead moves over the chart and the view follows it. Scrolling the chart
+// yourself (wheel, drag, touch, keys) stops the following; it picks up again once the playhead is
+// back in view and you've left the chart alone for a moment.
+const follow = { on: true, userAt: 0, setTo: null };
+{
+  const wrap = $(".chartwrap");
+  const mine = () => { follow.on = false; follow.userAt = performance.now(); };
+  for (const ev of ["wheel", "touchstart", "pointerdown", "keydown"]) wrap.addEventListener(ev, mine, { passive: true });
+  // any other scroll we didn't make ourselves (a scrollbar drag, a trackpad fling) counts too
+  wrap.addEventListener("scroll", () => { if (play && follow.setTo != null && Math.abs(wrap.scrollLeft - follow.setTo) > 2) mine(); });
+}
+function moveCursor(t) {
+  const wrap = $(".chartwrap"), cur = $(".chartwrap .cursor"), xx = CHART_L + t * PX_PER_S;
+  cur.hidden = t < 0; cur.style.transform = `translateX(${xx.toFixed(1)}px)`;
+  const view = wrap.clientWidth, inView = xx > wrap.scrollLeft + view * 0.1 && xx < wrap.scrollLeft + view * 0.9;
+  if (!follow.on && inView && performance.now() - follow.userAt > 1500) follow.on = true;
+  if (follow.on) {
+    const want = Math.max(0, Math.min(wrap.scrollWidth - view, xx - view * 0.3));
+    if (Math.abs(wrap.scrollLeft - want) > 0.5) wrap.scrollLeft = want;
+    follow.setTo = wrap.scrollLeft;
+  }
+}
 function render1(t) { return renderAbc(t.abc, { profile: $("#player").value, transpose: t.transpose || 0, bpm: t.bpm || buildChart(info(t).parsed).qpm }); }
 $("#playBtn").addEventListener("click", () => {
   if (play) { stop(); return; }
@@ -470,7 +493,8 @@ $("#playBtn").addEventListener("click", () => {
   const lead = r.truth.notes.length ? r.truth.notes[0].start : 0.4; // the synth starts after a short lead-in
   src.start(); play = { ctx, src, t0: ctx.currentTime + lead };
   $("#playBtn").textContent = "Stop"; $("#playBtn").classList.add("live");
-  const tick = () => { if (!play) return; drawChart(drawn.chart, drawn.check, play.ctx.currentTime - play.t0); requestAnimationFrame(tick); };
+  follow.on = true; follow.setTo = null;
+  const tick = () => { if (!play) return; moveCursor(play.ctx.currentTime - play.t0); requestAnimationFrame(tick); };
   requestAnimationFrame(tick);
 });
 let bc = null, earSeen = -Infinity, pending = null;

@@ -240,8 +240,16 @@ const $ = s => document.querySelector(s);
 
 /* ---------- preferences ---------- */
 const PREFS = "whistle-hero-play";
-let prefs = { tune: null, speed: 100, input: "mic", profile: "typical", monitor: true, latency: 0, mode: "fingers", loop: "off", halos: true, simArtic: "cuts", metro: "off", clickVol: 60 };
-try { Object.assign(prefs, JSON.parse(localStorage.getItem(PREFS) || "{}")); } catch (e) {}
+let prefs = { tune: null, speed: 100, input: "mic", profile: "typical", monitor: true, latency: 0, mode: "fingers", loop: "off", halos: false, fingerings: true, simArtic: "cuts", metro: "off", clickVol: 60, v: 2 };
+try {
+  const saved = JSON.parse(localStorage.getItem(PREFS) || "{}");
+  // v2: halos default to off, and the sheet view's fingerings got a setting of their own
+  if (!(saved.v >= 2)) { delete saved.halos; saved.v = 2; }
+  Object.assign(prefs, saved);
+} catch (e) {}
+// the display toggle: halos in the finger-hole view, the fingering strip in the sheet music view
+const AID_PREF = { fingers: "halos", sheet: "fingerings" };
+const aidOn = () => !!prefs[AID_PREF[prefs.mode]];
 const savePrefs = () => { try { localStorage.setItem(PREFS, JSON.stringify(prefs)); } catch (e) {} };
 const urlTune = new URLSearchParams(location.search).get("tune");
 if (urlTune) prefs.tune = urlTune;
@@ -294,13 +302,14 @@ function showMode() {
   if (!AID[prefs.mode]) prefs.mode = "fingers";
   document.querySelectorAll("[data-mode]").forEach(b => b.setAttribute("aria-pressed", b.dataset.mode === prefs.mode));
   document.querySelectorAll(".aidLabel").forEach(l => l.textContent = AID[prefs.mode][0]);
+  $("#halos").checked = aidOn();
   VIEWS[prefs.mode]().catch(e => msg(viewFailed(e))); // start loading it now
 }
 showMode();
 document.querySelectorAll("[data-mode]").forEach(b => b.addEventListener("click", () => { prefs.mode = b.dataset.mode; savePrefs(); showMode(); }));
-$("#halos").checked = prefs.halos;
+$("#halos").checked = aidOn();
 function setHalos(on) {
-  prefs.halos = on; savePrefs();
+  prefs[AID_PREF[prefs.mode]] = on; savePrefs();
   $("#halos").checked = on; $("#halosP").checked = on;
   if (S) S.view.setHalos(on);
 }
@@ -393,8 +402,6 @@ async function start() {
   // At very slow speeds a beat can last seconds, so the clicks subdivide it to stay ≤ 1 s apart.
   const sub = Math.ceil(chart.beatSeconds / 1.0), beat = chart.beatSeconds / sub;
   const countIn = sub === 1 ? Math.max(2, chart.beatsPerBar) : Math.max(4, sub);
-  const t0 = ctx.currentTime + 0.4 + countIn * beat;
-  for (let k = countIn; k >= 1; k--) click(ctx, t0 - k * beat, k === countIn);
 
   // Detected times are when the sound reached the analyser. With a microphone, the player was hearing
   // the count-in late by the output delay and the mic adds its own delay; the simulator is direct.
@@ -405,16 +412,19 @@ async function start() {
   const otherMic = prefs.input === "mic" && cal && cal.mic && micLabel && cal.mic !== micLabel;
   const game = createGame(chart);
   const stage = $("#stage"); stage.innerHTML = "";
-  const view = createView(stage, chart, { parsed, halos: prefs.halos });
-  S = { ctx, game, view, ear, t0, comp, outLat, tune, chart, parsed, sims: [], frame: null, ended: false, raf: 0,
+  const view = createView(stage, chart, { parsed, halos: aidOn() });
+  // The simulator's audio for the first pass takes a moment to render, so do it before the clock starts.
+  const sim0 = prefs.input === "sim" ? renderSim(tune, bpm0) : null;
+  S = { ctx, game, view, ear, t0: Infinity, comp, outLat, tune, chart, parsed, sims: [], frame: null, ended: false, raf: 0,
         beats: chart.beats.slice(), beatI: 0, metroSrc: [], metroRedo: false,
         countIn, countBeat: beat, loop: prefs.loop, passes: [{ start: 0, end: chart.end, bpm: bpm0, n: 1 }], baseBpm: bpm0, pass: 0 };
-  if (prefs.input === "sim") scheduleSim(S.passes[0]);
+  const session = S;
   if (location.hash === "#debug") window.__game = S; // for tests and troubleshooting
 
   ear.on("frame", fr => { if (S) { S.frame = fr; S.heardUpTo = fr.t; S.heardAt = performance.now(); } });
-  ear.on("onset", e => game.onset(e.midi, e.t - t0 - comp));
-  ear.on("grace", e => game.grace(e.midi, e.t - t0 - comp));
+  // (nothing counts until the clock has started)
+  ear.on("onset", e => { if (isFinite(session.t0)) game.onset(e.midi, e.t - session.t0 - comp); });
+  ear.on("grace", e => { if (isFinite(session.t0)) game.grace(e.midi, e.t - session.t0 - comp); });
   game.on(onJudgment);
   view.onEvent && game.on(e => view.onEvent(e));
 
@@ -422,14 +432,26 @@ async function start() {
   for (const id of ["#hud", "#heard", "#pauseBtn", "#progress"]) $(id).hidden = false;
   $("#tempoCtl").hidden = S.loop === "off";
   $("#endBtn").hidden = S.loop === "off";
-  $("#halosP").checked = prefs.halos;
+  $("#halosP").checked = aidOn();
   $("#hudTune").textContent = tune.title;
   showPassInfo();
   updateHud();
   msg("");
+
+  // Show the game screen and let it draw (the first frame of a 3D scene is the slow one) before the
+  // clock starts, then give a run-up: the notes come into view from the far end, and the count-in
+  // clicks in the last bar before the first note. Restart comes through here too.
+  view.update(-RUN_UP, null);
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  if (S !== session) return; // quit while getting ready
+  const runUp = Math.max(RUN_UP, countIn * beat + 0.4);
+  S.t0 = ctx.currentTime + runUp;
+  for (let k = countIn; k >= 1; k--) click(ctx, S.t0 - k * beat, k === countIn);
+  if (sim0) startSim(S.passes[0], sim0);
   if (otherMic) setTimeout(() => flash("Different microphone", "var(--brass)", "Calibrated with another mic. Recalibrate for best timing."), 300);
   loop();
 }
+const RUN_UP = 3; // seconds of notes approaching before the first one, at least
 
 // a short woodblock-like click: noise, no clear pitch, so the detector ignores it
 function click(ctx, at, strong, vol = prefs.clickVol / 60) {
@@ -479,8 +501,10 @@ function appendPass() {
   showPassInfo();
 }
 // the simulated player plays each pass from its own rendering, lined up on the game clock
-function scheduleSim(p) {
-  const r = renderAbc(S.tune.abc, { profile: prefs.profile, articulation: prefs.simArtic, bpm: p.bpm, transpose: S.tune.transpose || 0, seed: 1 + Math.floor(Math.random() * 9999) });
+const renderSim = (tune, bpm) => renderAbc(tune.abc,
+  { profile: prefs.profile, articulation: prefs.simArtic, bpm, transpose: tune.transpose || 0, seed: 1 + Math.floor(Math.random() * 9999) });
+function scheduleSim(p) { startSim(p, renderSim(S.tune, p.bpm)); }
+function startSim(p, r) {
   const ctx = S.ctx, buf = ctx.createBuffer(1, r.samples.length, r.sr); buf.copyToChannel(r.samples, 0);
   const src = ctx.createBufferSource(); src.buffer = buf;
   // Each pass is rendered on its own, so the simulated player stops the air for 30 ms where one pass
@@ -639,7 +663,7 @@ $("#menuBtn").addEventListener("click", () => { $("#results").hidden = true; $("
 addEventListener("keydown", e => {
   if (!S) return;
   if (e.key === "Escape" || e.key === " ") { e.preventDefault(); $("#paused").hidden ? pause() : resume(); }
-  else if (e.key === "h" || e.key === "H") { setHalos(!prefs.halos); flash(AID[prefs.mode][prefs.halos ? 1 : 2], "var(--grace)"); }
+  else if (e.key === "h" || e.key === "H") { setHalos(!aidOn()); flash(AID[prefs.mode][aidOn() ? 1 : 2], "var(--grace)"); }
   else if (e.key === "m" || e.key === "M") {
     const next = { off: "beat", beat: "bar", bar: "off" }[prefs.metro];
     setMetro(next); flash(METRO[next], "var(--grace)");

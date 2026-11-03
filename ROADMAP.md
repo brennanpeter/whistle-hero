@@ -50,12 +50,12 @@ Whistle only for now (fiddle support would mean widening the detector's range; s
 - [x] **Finger-hole view** (`src/game/views/finger-view.js`): rows of six holes down a highway, gold for the second octave, halos on fingers that move, flicks for cuts and taps, note names, part labels, and a hit line that lights up with the fingering being heard. It fits phone screens too.
 - [x] Game page (`play.html`): pick a tune, speed 10–200%, play yourself or watch a simulated player, a one-bar count-in, a heads-up display, pause (Esc or Space), and results with stars and personal bests
 - [x] Practice looping: repeat the tune until ended, optionally 5 bpm faster every third pass; − / + (or `[` / `]`) change the tempo from the next pass; results report full passes and top tempo
-- [x] Halos on moving fingers can be switched off (setup, pause menu, or `H`)
+- [x] Halos on moving fingers, off by default (setup, pause menu, or `H`)
 - [x] **Sheet music view** (`src/game/views/sheet-view.js`): one staff scrolling past a playhead, drawn with abcjs from ABC the game writes out (`src/abc/write.js`: repeats played out, transposition applied, ties over bar lines, triplets, ornaments), so every note on the staff is a note in the chart. A "ghost" notehead shows the note being played at its place on the staff, green or red, with ledger lines, accidental and name. Judged notes turn gold, green or red, an optional strip of whistle fingerings runs underneath (`H`), and loop passes carry straight on without a new clef.
 - [x] Mode switch on the setup screen; each view loads only when it's chosen
 - [x] Metronome during play: every beat or once a bar, bar starts accented, on the chart's beat grid (so it follows loop tempo changes), with a click volume; `M` cycles it. Clicks are unpitched noise bursts: mixed into Whistle Sim renders as loud as the whistle, they cost no notes and at most one ornament in twenty.
 - [ ] Guide track for headphone users (the tune played quietly along with you)
-- [ ] Deploy to GitHub Pages so it runs over HTTPS anywhere
+- [x] Deploy to GitHub Pages so it runs over HTTPS anywhere (the test workflow builds and deploys `main` once the tests pass)
 
 ## Later
 

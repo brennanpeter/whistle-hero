@@ -227,7 +227,12 @@ export function createSheetView(container, chart, opts = {}) {
 
   function update(t, live) {
     prune(t);
-    strip.style.transform = `translate(${(phX - xAt(t) * z).toFixed(1)}px, ${top.toFixed(1)}px) scale(${z})`;
+    // Before the tune starts the staff would sit off to the right; hold it in view instead (its left
+    // edge at most ~62% across), easing into the scroll so it never lurches.
+    let tx = phX - xAt(t) * z;
+    const cap = W * 0.62, k = W * 0.15;
+    if (tx > cap - k) tx = cap - k * Math.exp(-(tx - (cap - k)) / k);
+    strip.style.transform = `translate(${tx.toFixed(1)}px, ${top.toFixed(1)}px) scale(${z})`;
     const ok = live && live.expected != null && live.midi === live.expected;
     drawGhost(live && live.midi != null ? live.midi : null, ok);
   }
