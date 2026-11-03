@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 const page = name => resolve(import.meta.dirname, name);
 
 export default defineConfig({
+  base: "./",
   server: { port: 5173, open: false },
   build: {
     target: "es2022",
