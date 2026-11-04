@@ -30,6 +30,8 @@ export const DEFAULTS = {
   articulation: "abc",  // "abc" (tongue unless slurred) | "legato" (tongue only repeats and after rests)
                         // | "cuts" (legato; repeated notes separated with cuts and taps) | "tongued"
   tuningCents: 0,       // whole-instrument offset from A=440
+  shift: 0,             // the instrument's key, in semitones from a D whistle (B♭ whistle −4, flute −12):
+                        // the same fingerings and playing, sounding higher or lower
   pitchWobble: 0,       // per-note random tuning, cents (std dev)
   breathiness: 0.2,     // 0..1 air noise
   vibratoCents: 0,      // depth on long notes
@@ -293,7 +295,7 @@ export function renderPerformance(perf) {
     cents += coupling * (ratio - 1);
     const tt = n / sr;
     cents += 2.5 * Math.sin(TAU * 0.31 * tt + dph[0]) + 1.5 * Math.sin(TAU * 0.83 * tt + dph[1]);
-    const m = midi + cents / 100;
+    const m = midi + o.shift + cents / 100;
     const f = 440 * Math.pow(2, (m - 69) / 12);
     ph += TAU * f / sr; if (ph > TAU) ph -= TAU;
 

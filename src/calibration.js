@@ -7,9 +7,15 @@
 //
 // Pure functions (no audio, no DOM) so they're tested in Node.
 
+import { referencePitch } from "./instruments.js";
+
 export const STORE = "whistle-hero-calibration";
 
-/** { gateDb, noiseDb, a4, cents, latencyMs, latencyMethod, mic, date } or null. */
+/**
+ * { gateDb, noiseDb, latencyMs, latencyMethod, mic, date, tunings: { [instrument]: { a4, cents } } } or null.
+ * The room, mic and timing are the same whatever you play; tuning is kept for each instrument, since
+ * every whistle is a little sharp or flat in its own way. (Older saves have a4/cents for the D whistle.)
+ */
 export function loadCalibration() {
   try { const c = JSON.parse(localStorage.getItem(STORE) || "null"); if (c && typeof c === "object") return c; } catch (e) {}
   return null;
@@ -19,11 +25,24 @@ export function saveCalibration(c) {
 }
 export function clearCalibration() { try { localStorage.removeItem(STORE); } catch (e) {} }
 
-/** Detector settings with the calibration applied on top of the defaults. */
-export function calibratedSettings(defaults, cal = loadCalibration()) {
+/** The saved tuning for an instrument ({ a4, cents }), or null if it hasn't been tuned. */
+export function tuningFor(cal, inst = "D") {
+  if (!cal) return null;
+  const t = cal.tunings && cal.tunings[inst];
+  if (t && Number.isFinite(t.a4)) return t;
+  if (inst === "D" && Number.isFinite(cal.a4)) return { a4: cal.a4, cents: cal.cents };
+  return null;
+}
+
+/**
+ * Detector settings with the calibration applied on top of the defaults, for an instrument:
+ * the reference pitch is that instrument's tuning, moved to its key (see src/instruments.js).
+ */
+export function calibratedSettings(defaults, cal = loadCalibration(), inst = "D") {
   const s = { ...defaults };
   if (cal && Number.isFinite(cal.gateDb)) s.gate = cal.gateDb;
-  if (cal && Number.isFinite(cal.a4)) s.a4 = cal.a4;
+  const t = tuningFor(cal, inst);
+  s.a4 = referencePitch(inst, t ? t.a4 : defaults.a4);
   return s;
 }
 

@@ -29,8 +29,11 @@ export function detect(buf, sr, settings = DEFAULT_SETTINGS) {
   for (let i = 0; i < n; i++) e += buf[i] * buf[i];
   const rms = Math.sqrt(e / n), db = 20 * Math.log10(rms + 1e-9);
   if (db < settings.gate) return { rms, db, freq: 0, clarity: 0 };
-  const minTau = Math.max(2, Math.floor(sr / FMAX));
-  const maxTau = Math.min((n >> 1) - 1, Math.ceil(sr / FMIN * 1.6));
+  // the search range follows the reference pitch, so a flute an octave down (a4 = 220) is searched an
+  // octave lower; for a D whistle (a4 = 440) it's FMIN–FMAX
+  const k = (settings.a4 || 440) / 440;
+  const minTau = Math.max(2, Math.floor(sr / (FMAX * k)));
+  const maxTau = Math.min((n >> 1) - 1, Math.ceil(sr / (FMIN * k) * 1.6));
   let m = 2 * e;
   for (let tau = 0; tau <= maxTau; tau++) {
     if (tau > 0) { const a = buf[n - tau], b = buf[tau - 1]; m -= a * a + b * b; }

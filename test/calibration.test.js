@@ -98,3 +98,36 @@ test("micCheck: tells a healthy take from a silent, hissy, clipped or too-quiet 
   assert.deepEqual(micCheck(take(0.002, 1.6, 0.999), sr).problems, ["clip"]);
   assert.deepEqual(micCheck(take(0.0005, 0.005), sr).problems, ["quiet"]);
 });
+
+test("instruments: per-instrument tuning, and the reference pitch moved to the instrument's key", async () => {
+  const { tuningFor } = await import("../src/calibration.js");
+  const { referencePitch, soundingName, shiftOf } = await import("../src/instruments.js");
+  const old = { gateDb: -55, a4: 444, cents: 15.6 };                       // a save from before instruments
+  assert.deepEqual(tuningFor(old, "D"), { a4: 444, cents: 15.6 });
+  assert.equal(tuningFor(old, "Bb"), null);
+  const cal = { gateDb: -55, tunings: { D: { a4: 442, cents: 7.8 }, Bb: { a4: 437, cents: -11.8 } } };
+  assert.equal(calibratedSettings(DEFAULT_SETTINGS, cal, "D").a4, 442);
+  assert.ok(Math.abs(calibratedSettings(DEFAULT_SETTINGS, cal, "Bb").a4 - 437 * Math.pow(2, -4 / 12)) < 1e-9);
+  assert.equal(calibratedSettings(DEFAULT_SETTINGS, cal, "C").a4, referencePitch("C", 440), "untuned: standard pitch, in its key");
+  assert.equal(calibratedSettings(DEFAULT_SETTINGS, cal, "lowD").a4, 220, "a flute: an octave down");
+  assert.equal(calibratedSettings(DEFAULT_SETTINGS, cal, "Bb").gate, -55, "the room's gate applies to every instrument");
+  // what the fingerings sound like
+  assert.equal(soundingName(74, "Bb"), "B♭"); assert.equal(soundingName(78, "Bb"), "D");
+  assert.equal(soundingName(74, "C"), "C"); assert.equal(soundingName(85, "A"), "G♯");
+  assert.equal(soundingName(74, "lowD"), null); assert.equal(soundingName(74, "D"), null);
+  assert.equal(shiftOf("nonsense"), 0);
+});
+
+test("a B♭ whistle's bottom note, heard with the B♭ reference, reads as the fingering D", () => {
+  const { referencePitch } = { referencePitch: (k, a4 = 440) => a4 * Math.pow(2, ({ Bb: -4, lowD: -12 })[k] / 12) };
+  for (const [inst, hzBottom] of [["Bb", 466.16], ["lowD", 293.66]]) {
+    const S = makeSession({ ...DEFAULT_SETTINGS, a4: referencePitch(inst) });
+    const buf = new Float32Array(WIN), frames = [];
+    for (let k = 0; k < 60; k++) {
+      for (let i = 0; i < WIN; i++) { const t = (k * HOP + i) / SR; buf[i] = 0.3 * Math.sin(2 * Math.PI * hzBottom * t) + 0.1 * Math.sin(4 * Math.PI * hzBottom * t); }
+      frames.push(feed(S, k * HOP / SR, buf, SR));
+    }
+    const midi = frames.filter(f => f.voiced).map(f => Math.round(f.midiF));
+    assert.ok(midi.length > 40 && midi.every(m => m === 74), `${inst}: ${[...new Set(midi)]}`);
+  }
+});

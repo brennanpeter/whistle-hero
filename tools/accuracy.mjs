@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { renderAbc, PRESETS, PROFILES } from "../src/sim/whistle-synth.js";
 import { analyze, DEFAULT_SETTINGS } from "../src/audio/detector.js";
 import { matchTruth } from "../src/audio/score.js";
+import { referencePitch, shiftOf } from "../src/instruments.js";
 
 export const BASELINE = new URL("../test/accuracy-baseline.json", import.meta.url);
 
@@ -16,12 +17,14 @@ export const BASELINE = new URL("../test/accuracy-baseline.json", import.meta.ur
 export const SCENARIOS = [
   ...Object.keys(PRESETS).flatMap(tune => Object.keys(PROFILES).map(profile => ({ tune, profile, articulation: "abc" }))),
   ...["repeats", "reel"].flatMap(tune => ["clean", "typical"].map(profile => ({ tune, profile, articulation: "cuts" }))),
+  // other instruments: the same playing, sounding lower (see src/instruments.js)
+  ...["Bb", "lowD"].flatMap(inst => ["ornaments", "reel"].flatMap(tune => ["typical", "beginner"].map(profile => ({ tune, profile, articulation: "abc", inst })))),
 ];
-export const scenarioId = s => `${s.tune}/${s.profile}/${s.articulation}`;
+export const scenarioId = s => `${s.tune}/${s.profile}/${s.articulation}` + (s.inst ? `/${s.inst}` : "");
 
 export function measure(s) {
-  const r = renderAbc(PRESETS[s.tune].abc, { profile: s.profile, articulation: s.articulation, seed: 1 });
-  const S = analyze(r.samples, r.sr, { ...DEFAULT_SETTINGS });
+  const r = renderAbc(PRESETS[s.tune].abc, { profile: s.profile, articulation: s.articulation, seed: 1, shift: shiftOf(s.inst) });
+  const S = analyze(r.samples, r.sr, { ...DEFAULT_SETTINGS, a4: referencePitch(s.inst || "D") });
   const m = matchTruth(r.truth, S.segs);
   return {
     notes: +(m.hitNotes / Math.max(1, m.notes)).toFixed(3),

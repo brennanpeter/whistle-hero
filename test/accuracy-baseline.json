@@ -118,5 +118,45 @@
     "notes": 0.96,
     "ornaments": 0.85,
     "extra": 6
+  },
+  "ornaments/typical/abc/Bb": {
+    "notes": 1,
+    "ornaments": 0.786,
+    "extra": 4
+  },
+  "ornaments/beginner/abc/Bb": {
+    "notes": 1,
+    "ornaments": 1,
+    "extra": 8
+  },
+  "reel/typical/abc/Bb": {
+    "notes": 1,
+    "ornaments": 0.625,
+    "extra": 4
+  },
+  "reel/beginner/abc/Bb": {
+    "notes": 1,
+    "ornaments": 1,
+    "extra": 1
+  },
+  "ornaments/typical/abc/lowD": {
+    "notes": 1,
+    "ornaments": 1,
+    "extra": 2
+  },
+  "ornaments/beginner/abc/lowD": {
+    "notes": 1,
+    "ornaments": 1,
+    "extra": 11
+  },
+  "reel/typical/abc/lowD": {
+    "notes": 1,
+    "ornaments": 1,
+    "extra": 4
+  },
+  "reel/beginner/abc/lowD": {
+    "notes": 0.992,
+    "ornaments": 1,
+    "extra": 3
   }
 }

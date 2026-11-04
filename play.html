@@ -51,6 +51,7 @@ input[type=number]{font:14px var(--f-mono);color:var(--ink);background:var(--bg)
 .heard{position:fixed;left:50%;top:max(14px,env(safe-area-inset-top));transform:translateX(-50%);font:500 13px var(--f-mono);color:var(--muted);
   background:rgba(13,18,16,.7);padding:6px 12px;border-radius:6px;pointer-events:none;white-space:nowrap}
 .heard b{font:800 22px/1 var(--f-display);color:var(--ink);margin-left:6px;vertical-align:-2px}
+.heard #heardSounds{margin-left:8px}
 .count{position:fixed;inset:0;display:grid;place-items:center;font:800 140px/1 var(--f-display);color:var(--brass);pointer-events:none;text-shadow:0 4px 24px rgba(0,0,0,.6)}
 .pausebtn{position:fixed;right:max(16px,env(safe-area-inset-right));bottom:max(14px,env(safe-area-inset-bottom))}
 .tempo{position:fixed;left:max(16px,env(safe-area-inset-left));bottom:max(14px,env(safe-area-inset-bottom));display:flex;align-items:center;gap:8px;
@@ -94,7 +95,7 @@ a{color:var(--brass)}
   <div class="block right"><span class="tune" id="hudTune"></span><span class="label" id="hudInfo"></span><span class="combo" id="acc"></span></div>
 </div>
 <div class="judge" id="judge"></div>
-<div class="heard" id="heard" hidden>Hearing<b id="heardNote">–</b></div>
+<div class="heard" id="heard" hidden>Hearing<b id="heardNote">–</b><span id="heardSounds"></span></div>
 <div class="count" id="count" hidden></div>
 <button class="pausebtn" id="pauseBtn" type="button" hidden>Pause</button>
 <div class="tempo" id="tempoCtl" hidden>
@@ -106,11 +107,16 @@ a{color:var(--brass)}
 <!-- setup -->
 <div class="overlay" id="setup">
   <div class="card">
-    <div><h1>Whistle Hero</h1><p class="muted">Play along on a D whistle. The game listens through your microphone.</p></div>
+    <div><h1>Whistle Hero</h1><p class="muted">Play along on a whistle or flute. The game listens through your microphone.</p></div>
     <div class="field">
       <label for="tune">Tune</label>
       <select id="tune"></select>
       <span class="hint" id="tuneHint"></span>
+    </div>
+    <div class="field">
+      <label for="instrument">Instrument</label>
+      <select id="instrument"></select>
+      <span class="hint" id="instHint"></span>
     </div>
     <div class="field">
       <span class="lab">View</span>
@@ -235,7 +241,8 @@ import { DEFAULT_SETTINGS } from "./src/audio/detector.js";
 import { renderAbc, PRESETS, PROFILES } from "./src/sim/whistle-synth.js";
 import { noteInfo } from "./src/whistle.js";
 import { loadLibrary, saveLibrary, groupTunes } from "./src/library.js";
-import { loadCalibration, calibratedSettings } from "./src/calibration.js";
+import { loadCalibration, calibratedSettings, tuningFor } from "./src/calibration.js";
+import { INSTRUMENTS, instrument, loadInstrument, saveInstrument, referencePitch, shiftOf, soundingName } from "./src/instruments.js";
 const $ = s => document.querySelector(s);
 
 /* ---------- preferences ---------- */
@@ -347,12 +354,29 @@ showMetro();
 $("#profile").addEventListener("change", e => { prefs.profile = e.target.value; savePrefs(); });
 $("#monitor").addEventListener("change", e => { prefs.monitor = e.target.checked; savePrefs(); });
 $("#latency").addEventListener("change", e => { prefs.latency = Math.max(-300, Math.min(300, +e.target.value || 0)); e.target.value = prefs.latency; savePrefs(); });
+/* ---------- instrument ---------- */
+// Playing alone: tunes are fingered as written on any instrument and sound in its key. Only the
+// detector (and the simulated player) need to know which one it is.
+let inst = loadInstrument();
+for (const [k, v] of Object.entries(INSTRUMENTS)) $("#instrument").append(new Option(v.label, k));
+$("#instrument").value = inst;
+function showInst() {
+  const sh = shiftOf(inst);
+  $("#instHint").textContent = sh === 0 ? "" : sh % 12 === 0
+    ? "Same fingerings as a D whistle, an octave lower."
+    : `Same fingerings as a D whistle: tunes are fingered as written and sound ${sh < 0 ? "lower" : "higher"}, so a tune in D comes out in ${soundingName(74, inst)}.`;
+}
+showInst();
+$("#instrument").addEventListener("change", e => { inst = e.target.value; saveInstrument(inst); showInst(); showCal(); });
+
 function showCal() {
   const c = loadCalibration();
   if (!c) { $("#calStatus").textContent = "Not calibrated yet. Takes about a minute and makes timing and pitch more accurate."; $("#calBtn").classList.add("primary"); return; }
   const p = [];
   if (Number.isFinite(c.latencyMs)) p.push(`timing ${c.latencyMs} ms`);
-  if (Number.isFinite(c.cents)) p.push(`whistle ${c.cents >= 0 ? "+" : "−"}${Math.abs(c.cents).toFixed(0)}¢`);
+  const tn = tuningFor(c, inst);
+  if (tn && Number.isFinite(tn.cents)) p.push(`${instrument(inst).label} ${tn.cents >= 0 ? "+" : "−"}${Math.abs(tn.cents).toFixed(0)}¢`);
+  else p.push(`${instrument(inst).label} tuning not measured yet`);
   if (Number.isFinite(c.gateDb)) p.push(`gate ${c.gateDb} dB`);
   $("#calStatus").textContent = `Calibrated ${new Date(c.date).toLocaleDateString()}: ${p.join(" · ")}`;
   $("#calBtn").textContent = "Recalibrate"; $("#calBtn").classList.remove("primary");
@@ -389,7 +413,7 @@ async function start() {
   await ctx.resume();
   const cal = loadCalibration();
   // the calibrated noise gate and whistle tuning apply to your own playing; the simulator is in tune
-  const ear = await createListener(ctx, prefs.input === "mic" ? calibratedSettings(DEFAULT_SETTINGS, cal) : { ...DEFAULT_SETTINGS });
+  const ear = await createListener(ctx, prefs.input === "mic" ? calibratedSettings(DEFAULT_SETTINGS, cal, inst) : { ...DEFAULT_SETTINGS, a4: referencePitch(inst) });
   const outLat = (ctx.outputLatency || 0) + (ctx.baseLatency || 0);
   let inLat = 0, micLabel = "";
   try {
@@ -502,7 +526,7 @@ function appendPass() {
 }
 // the simulated player plays each pass from its own rendering, lined up on the game clock
 const renderSim = (tune, bpm) => renderAbc(tune.abc,
-  { profile: prefs.profile, articulation: prefs.simArtic, bpm, transpose: tune.transpose || 0, seed: 1 + Math.floor(Math.random() * 9999) });
+  { profile: prefs.profile, articulation: prefs.simArtic, bpm, transpose: tune.transpose || 0, shift: shiftOf(inst), seed: 1 + Math.floor(Math.random() * 9999) });
 function scheduleSim(p) { startSim(p, renderSim(S.tune, p.bpm)); }
 function startSim(p, r) {
   const ctx = S.ctx, buf = ctx.createBuffer(1, r.samples.length, r.sr); buf.copyToChannel(r.samples, 0);
@@ -522,7 +546,7 @@ function startSim(p, r) {
 function showPassInfo() {
   if (!S) return;
   const cur = S.passes[S.pass] || S.passes[0];
-  const extra = prefs.input === "sim" ? ` · ${PROFILES[prefs.profile].label}` : "";
+  const extra = (inst !== "D" ? ` · ${instrument(inst).label}` : "") + (prefs.input === "sim" ? ` · ${PROFILES[prefs.profile].label}` : "");
   $("#hudInfo").textContent = S.loop === "off" ? `${prefs.speed}% · ${cur.bpm} bpm${extra}` : `Pass ${cur.n} · ${cur.bpm} bpm${extra}`;
   if (S.loop !== "off") {
     // the next pass that hasn't been laid out yet is the first one a change can reach
@@ -588,6 +612,8 @@ function loop() {
   const exp = expectedAt(t);
   view.update(t, { midi: heard, expected: exp ? exp.midi : null });
   $("#heardNote").textContent = heard != null ? noteInfo(heard).name : "–";
+  const snd = heard != null ? soundingName(heard, inst) : null;
+  $("#heardSounds").textContent = snd ? `sounds ${snd}` : "";
   // looping: lay out the next pass well before it scrolls into view, and track which pass we're in
   if (S.loop !== "off") {
     if (t > S.passes[S.passes.length - 1].end - 6) appendPass();

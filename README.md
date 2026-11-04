@@ -10,6 +10,8 @@ Playable, early. See [ROADMAP.md](ROADMAP.md) for what's done and what comes nex
 
   The **sheet music view** is for learning to read: the tune on one staff, repeats written out, scrolling past a playhead. A "ghost" notehead at the playhead shows the note you're playing at its place on the staff (green when right, red when not, with ledger lines, any sharp or flat, and its name), and notes turn gold, green or red as they're judged. Whistle fingerings can run under the staff (`H` toggles them). The staff is drawn with [abcjs](https://www.abcjs.net/).
 
+  **Other instruments:** choose a C, B♭, A, G, F, E♭ or high G whistle, or a low D whistle or Irish flute. Tunes are fingered as written (as on a D whistle) and sound in the instrument's key, and the game shows what each fingering really sounds ("B, sounds G" on a B♭ whistle).
+
 - **`calibrate.html`**: a **mic check** (it names the microphone in use, records five seconds for you to play back, and warns if the take is silent, hissy, too quiet or distorted), then a one-minute calibration for your room, microphone and whistle: a noise gate from three seconds of quiet, your whistle's tuning from a held note, and the timing delay (beeps through the speakers, or play along on headphones). The game and Whistle Ear use it.
 
 - **`whistle-ear.html`**: a test bench for pitch detection. It runs the McLeod pitch method on live mic input or a recording, segments the stream into notes, and filters out overtone jumps and short "sliver" transients.
@@ -60,6 +62,7 @@ whistle-ear.html        detector test bench
 whistle-sim.html        simulator page
 tunes.html              Tune Library
 src/whistle.js          D whistle facts: note names, fingerings, cut and tap pitches
+src/instruments.js      other whistles and the flute: their keys, and the detector's reference pitch for each
 src/audio/detector.js   pitch detection, note segmentation, ornament and transient labels
 src/audio/score.js      compare detected notes with intended ones
 src/abc/abc.js          ABC parser (multi-tune files, metadata, repeats, endings, parts, ornaments…)

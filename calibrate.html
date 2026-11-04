@@ -59,6 +59,9 @@ button:disabled{opacity:.45;cursor:default}
 .micname b{color:var(--ink);font-weight:500}
 #wave{display:block;width:100%;height:64px;background:var(--bg);border-radius:6px}
 .result.warn{color:var(--brass)}
+select{font:500 14px var(--f-body);color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:9px 10px}
+.inst{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.inst label{font-weight:500}
 @media (max-width:520px){h1{font-size:38px}.heard .n{font-size:44px}}
 </style>
 </head>
@@ -91,6 +94,8 @@ button:disabled{opacity:.45;cursor:default}
   </div>
 
   <div class="card" id="steps" hidden>
+    <div class="inst"><label for="instrument">Instrument</label><select id="instrument"></select>
+      <span class="muted" style="font-size:13px">Step 2 is saved for this instrument; steps 1 and 3 apply to all of them.</span></div>
     <div class="step" id="s1">
       <span class="num">1</span>
       <h2>Quiet room</h2>
@@ -100,7 +105,7 @@ button:disabled{opacity:.45;cursor:default}
     <div class="step" id="s2">
       <span class="num">2</span>
       <h2>Hold a note</h2>
-      <p class="muted">Play a steady low D (all six holes covered) for 3 seconds at your normal strength.</p>
+      <p class="muted">Play a steady <span id="bottomNote">low D</span> (all six holes covered) for 3 seconds at your normal strength.</p>
       <div class="row" style="grid-column:2"><button id="noteBtn" type="button">Measure my whistle</button><span class="result" id="r2" role="status"></span></div>
     </div>
     <div class="step" id="s3">
@@ -129,11 +134,29 @@ import { createListener } from "./src/audio/live.js";
 import { DEFAULT_SETTINGS } from "./src/audio/detector.js";
 import { noiseGate, whistleTuning, latencyFrom, loadCalibration, saveCalibration, clearCalibration, GATE_MIN, micCheck } from "./src/calibration.js";
 import { noteInfo } from "./src/whistle.js";
+import { INSTRUMENTS, instrument, loadInstrument, saveInstrument, referencePitch, soundingName } from "./src/instruments.js";
+import { tuningFor } from "./src/calibration.js";
 const $ = s => document.querySelector(s);
 const loopbackTest = location.hash === "#loopback"; // tests: route the beeps straight into the detector
 
 let ctx = null, ear = null, mic = "", rec = null, onsets = null, last = null;
-const result = { gateDb: null, noiseDb: null, a4: null, cents: null, latencyMs: null, latencyMethod: null };
+const result = { gateDb: null, noiseDb: null, latencyMs: null, latencyMethod: null };
+let tuning = null; // { inst, a4, cents } from step 2
+
+// the instrument: the detector listens in its key, so its bottom note reads as the fingering D
+let inst = loadInstrument();
+for (const [k, v] of Object.entries(INSTRUMENTS)) $("#instrument").append(new Option(v.label, k));
+$("#instrument").value = inst;
+function showInst() {
+  const snd = soundingName(74, inst);
+  $("#bottomNote").textContent = snd ? `bottom note (${snd} on this ${instrument(inst).label})` : inst === "D" ? "low D" : "bottom D";
+  if (ear) ear.session.settings.a4 = referencePitch(inst);
+}
+showInst();
+$("#instrument").addEventListener("change", e => {
+  inst = e.target.value; saveInstrument(inst); showInst();
+  if (tuning && tuning.inst !== inst) { tuning = null; $("#r2").textContent = ""; markDone(2, false); finishIfReady(); }
+});
 
 function showSaved() {
   const c = loadCalibration();
@@ -142,7 +165,10 @@ function showSaved() {
 function describe(c) {
   const p = [];
   if (Number.isFinite(c.gateDb)) p.push(`gate ${c.gateDb} dB`);
-  if (Number.isFinite(c.cents)) p.push(`whistle ${c.cents >= 0 ? "+" : "−"}${Math.abs(c.cents).toFixed(0)} cents`);
+  for (const k of Object.keys(INSTRUMENTS)) {
+    const t = tuningFor(c, k);
+    if (t && Number.isFinite(t.cents)) p.push(`${instrument(k).label} ${t.cents >= 0 ? "+" : "−"}${Math.abs(t.cents).toFixed(0)} cents`);
+  }
   if (Number.isFinite(c.latencyMs)) p.push(`timing ${c.latencyMs} ms`);
   return p.join(" · ") + (c.mic ? ` (${c.mic})` : "");
 }
@@ -153,7 +179,7 @@ $("#beginBtn").addEventListener("click", async () => {
   try {
     ctx = new AudioContext({ latencyHint: "interactive" }); await ctx.resume();
     // gate off while calibrating: the quiet step needs every frame's level
-    ear = await createListener(ctx, { ...DEFAULT_SETTINGS, gate: -120 });
+    ear = await createListener(ctx, { ...DEFAULT_SETTINGS, gate: -120, a4: referencePitch(inst) });
     const m = await ear.useMicrophone(); mic = m.label || "";
   } catch (e) {
     $("#introMsg").textContent = e && e.name === "NotAllowedError" ? "The microphone was blocked. Allow it in the address bar and try again." : "No microphone is available here.";
@@ -182,7 +208,8 @@ function meter() {
     if (last.voiced && last.db > gate) {
       const m = Math.round(last.midiF), c = (last.midiF - m) * 100;
       $("#note").textContent = noteInfo(m).name;
-      $("#cents").textContent = `${c >= 0 ? "+" : "−"}${Math.abs(c).toFixed(0)} cents from A = 440`;
+      const snd = soundingName(m, inst);
+      $("#cents").textContent = (snd ? `sounds ${snd} · ` : "") + `${c >= 0 ? "+" : "−"}${Math.abs(c).toFixed(0)} cents from A = 440`;
     } else { $("#note").textContent = "–"; $("#cents").textContent = ""; }
   }
   requestAnimationFrame(meter);
@@ -279,7 +306,7 @@ $("#noteBtn").addEventListener("click", async () => {
   const gate = result.gateDb ?? DEFAULT_SETTINGS.gate;
   const r = whistleTuning(frames.filter(f => f.voiced && f.db > gate));
   if (!r) { $("#r2").textContent = "Didn't catch a steady note. Hold one note for the whole 3 seconds and try again."; $("#r2").className = "result bad"; busy(false); return; }
-  result.a4 = r.a4; result.cents = r.cents;
+  tuning = { inst, a4: r.a4, cents: r.cents };
   // make sure the gate sits well below the whistle, even in a noisy room
   let note = "";
   if (result.gateDb != null && r.levelDb - result.gateDb < 15) {
@@ -349,19 +376,27 @@ function timingResult(r, method, failMsg) {
 
 /* ---------- save ---------- */
 function finishIfReady() {
-  const any = result.gateDb != null || result.a4 != null || result.latencyMs != null;
+  const any = result.gateDb != null || tuning != null || result.latencyMs != null;
   $("#done").hidden = !any;
   const box = $("#summary"); box.innerHTML = "";
   const stat = (v, l) => { const d = document.createElement("div"); d.className = "stat"; const b = document.createElement("b"); b.textContent = v; const s = document.createElement("span"); s.textContent = l; d.append(b, s); box.append(d); };
   stat(result.gateDb != null ? `${result.gateDb} dB` : "–", "noise gate");
-  stat(result.cents != null ? `${result.cents >= 0 ? "+" : "−"}${Math.abs(result.cents).toFixed(0)} ¢` : "–", "whistle tuning");
+  stat(tuning ? `${tuning.cents >= 0 ? "+" : "−"}${Math.abs(tuning.cents).toFixed(0)} ¢` : "–", `${instrument(tuning ? tuning.inst : inst).label} tuning`);
   stat(result.latencyMs != null ? `${result.latencyMs} ms` : "–", "timing delay");
-  $("#doneMsg").textContent = [result.gateDb, result.a4, result.latencyMs].some(v => v == null) ? "Steps you skip keep their current saved values (or the standard settings)." : "";
+  $("#doneMsg").textContent = [result.gateDb, tuning, result.latencyMs].some(v => v == null) ? "Steps you skip keep their current saved values (or the standard settings)." : "";
 }
 $("#saveBtn").addEventListener("click", () => {
   const prev = loadCalibration() || {};
   const merged = { ...prev, mic };
   for (const [k, v] of Object.entries(result)) if (v != null) merged[k] = v;
+  if (tuning) {
+    // kept per instrument; the D whistle's also goes in the old a4/cents fields Whistle Ear reads
+    const tunings = { ...(prev.tunings || {}) };
+    if (!tunings.D && Number.isFinite(prev.a4)) tunings.D = { a4: prev.a4, cents: prev.cents };
+    tunings[tuning.inst] = { a4: tuning.a4, cents: tuning.cents };
+    merged.tunings = tunings;
+    if (tuning.inst === "D") { merged.a4 = tuning.a4; merged.cents = tuning.cents; }
+  }
   if (saveCalibration(merged)) { $("#doneMsg").textContent = "Saved. The game will use it from now on."; showSaved(); }
   else $("#doneMsg").textContent = "This browser wouldn't save it (private browsing?).";
 });

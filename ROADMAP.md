@@ -76,7 +76,9 @@ Whistle only for now (fiddle support would mean widening the detector's range; s
 - [ ] Hit effects, visual themes and a low-power mode
 - [ ] Phones and tablets (mic latency, iOS Safari audio quirks)
 - [ ] Installable offline app (PWA)
-- [ ] Other whistle keys (C, high G, low D) by making the bottom note a setting
+- [x] Other instruments, playing alone: whistles in C, B♭, A, G, F, E♭ and high G, and the low D whistle or Irish flute. Tunes are fingered as written and sound in the instrument's key; the detector listens with its reference pitch moved to the instrument (and its pitch search follows, down an octave for the flute). Tuning is calibrated per instrument, the simulated player sounds like the chosen instrument, and the game shows the pitch a fingering really sounds. The accuracy check covers the B♭ whistle and the flute.
+- [ ] Other instruments, matching others: transpose the fingerings so the instrument sounds at the written pitch, with the half-hole check run for that instrument
+- [ ] Test the flute with real recordings (the simulator still sounds like a whistle at every pitch)
 - [ ] Colorblind-safe lanes and reduced motion
 
 ## Simulator improvements, as needed
