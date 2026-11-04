@@ -130,6 +130,11 @@ a{color:var(--brass)}
       <input id="speed" type="range" min="10" max="200" step="5">
     </div>
     <div class="field">
+      <label for="spacing">Note spacing <output id="spacingOut"></output></label>
+      <input id="spacing" type="range" min="75" max="300" step="25">
+      <span class="hint">How far apart the notes are, on the runway or the staff. Wider is easier to read; you see fewer notes ahead.</span>
+    </div>
+    <div class="field">
       <span class="lab">Repeat</span>
       <div class="seg" role="group" aria-label="Repeat">
         <button type="button" data-loop="off" aria-pressed="true">Play once</button>
@@ -247,7 +252,7 @@ const $ = s => document.querySelector(s);
 
 /* ---------- preferences ---------- */
 const PREFS = "whistle-hero-play";
-let prefs = { tune: null, speed: 100, input: "mic", profile: "typical", monitor: true, latency: 0, mode: "fingers", loop: "off", halos: false, fingerings: true, simArtic: "cuts", metro: "off", clickVol: 60, v: 2 };
+let prefs = { tune: null, speed: 100, input: "mic", profile: "typical", monitor: true, latency: 0, mode: "fingers", loop: "off", halos: false, fingerings: true, simArtic: "cuts", metro: "off", clickVol: 60, spacing: 100, v: 2 };
 try {
   const saved = JSON.parse(localStorage.getItem(PREFS) || "{}");
   // v2: halos default to off, and the sheet view's fingerings got a setting of their own
@@ -333,6 +338,9 @@ const showSpeed = () => {
   $("#speedOut").textContent = prefs.speed + "%" + bpm;
 };
 showSpeed();
+const showSpacing = () => { $("#spacing").value = prefs.spacing; $("#spacingOut").textContent = prefs.spacing + "%"; };
+showSpacing();
+$("#spacing").addEventListener("input", e => { prefs.spacing = +e.target.value; savePrefs(); showSpacing(); });
 $("#speed").addEventListener("input", e => { prefs.speed = +e.target.value; showSpeed(); savePrefs(); });
 
 /* ---------- metronome ---------- */
@@ -436,7 +444,7 @@ async function start() {
   const otherMic = prefs.input === "mic" && cal && cal.mic && micLabel && cal.mic !== micLabel;
   const game = createGame(chart);
   const stage = $("#stage"); stage.innerHTML = "";
-  const view = createView(stage, chart, { parsed, halos: aidOn() });
+  const view = createView(stage, chart, { parsed, halos: aidOn(), spacing: prefs.spacing / 100 });
   // The simulator's audio for the first pass takes a moment to render, so do it before the clock starts.
   const sim0 = prefs.input === "sim" ? renderSim(tune, bpm0) : null;
   S = { ctx, game, view, ear, t0: Infinity, comp, outLat, tune, chart, parsed, sims: [], frame: null, ended: false, raf: 0,

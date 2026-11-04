@@ -70,7 +70,7 @@ export function createSheetView(container, chart, opts = {}) {
     strip.append(box);
     const n = sheet.pieces.reduce((a, b) => a + b, 0);
     const [vis] = abcjs.renderAbc(box, sheet.abc, {
-      add_classes: true, scale: 1, staffwidth: n * 44 + 600, foregroundColor: C.ink,
+      add_classes: true, scale: 1, staffwidth: n * 44 * Math.max(0.5, Math.min(4, opts.spacing ?? 1)) + 600, foregroundColor: C.ink,
       paddingleft: 0, paddingright: 0, paddingtop: 6, paddingbottom: 0, oneSvgPerLine: true,
       format: { annotationfont: "sans-serif 10", gchordfont: "sans-serif 10" },
     });

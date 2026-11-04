@@ -21,8 +21,11 @@ const COLORS = {
 export function createFingerView(container, chart, opts = {}) {
   // Notes are laid out by the beat, not the clock: a quarter note always takes QUARTER units of road
   // (3.5, which is how the road looked at 120 bpm), so a fast tune comes at you faster instead of
-  // bunching up. VIEW is how much road is in sight: two bars of 4/4.
-  const QUARTER = opts.spacing ?? 3.5, VIEW = opts.view ?? 28;
+  // bunching up. VIEW is how much road is in sight: two bars of 4/4 at the standard spacing.
+  // opts.spacing (1 = standard) spreads the notes out; the road in sight grows with its square root,
+  // so wider spacing still shows a fair way ahead without the far end shrinking to nothing.
+  const f = Math.max(0.5, Math.min(4, opts.spacing ?? 1));
+  const QUARTER = 3.5 * f, VIEW = 28 * Math.sqrt(f);
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
   renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
   renderer.setClearColor(COLORS.bg);
