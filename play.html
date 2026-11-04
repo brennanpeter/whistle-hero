@@ -438,10 +438,13 @@ async function start() {
     ctx.close(); msg(e && e.name === "NotAllowedError" ? "The microphone was blocked. Allow it in the browser's address bar, or try the simulated player." : "No microphone is available here. Try the simulated player.");
     return;
   }
-  // count-in: one bar of clicks, then the first note at game time 0
-  // At very slow speeds a beat can last seconds, so the clicks subdivide it to stay ≤ 1 s apart.
+  // Count-in: the bar before the tune's first downbeat, on the tune's own beat grid, so it runs straight
+  // on into the tune (and the metronome). A pickup falls in where it belongs: the first note is at game
+  // time 0, the first downbeat at `down`. At very slow speeds a beat can last seconds, so the clicks
+  // subdivide it to stay ≤ 1 s apart (the in-between clicks quieter).
+  const down = (chart.beats.find(b => b.strong) || { t: 0 }).t;
   const sub = Math.ceil(chart.beatSeconds / 1.0), beat = chart.beatSeconds / sub;
-  const countIn = sub === 1 ? Math.max(2, chart.beatsPerBar) : Math.max(4, sub);
+  const countIn = Math.max(2, chart.beatsPerBar) * sub;
 
   // Detected times are when the sound reached the analyser. With a microphone, the player was hearing
   // the count-in late by the output delay and the mic adds its own delay; the simulator is direct.
@@ -457,7 +460,7 @@ async function start() {
   const sim0 = prefs.input === "sim" ? renderSim(tune, bpm0) : null;
   S = { ctx, game, view, ear, t0: Infinity, comp, outLat, tune, chart, parsed, sims: [], frame: null, ended: false, raf: 0,
         beats: chart.beats.slice(), beatI: 0, metroSrc: [], metroRedo: false,
-        countIn, countBeat: beat, loop: prefs.loop, passes: [{ start: 0, end: chart.end, bpm: bpm0, n: 1 }], baseBpm: bpm0, pass: 0 };
+        countIn, countBeat: beat, countSub: sub, countDown: down, loop: prefs.loop, passes: [{ start: 0, end: chart.end, bpm: bpm0, n: 1 }], baseBpm: bpm0, pass: 0 };
   const session = S;
   if (location.hash === "#debug") window.__game = S; // for tests and troubleshooting
 
@@ -484,9 +487,10 @@ async function start() {
   view.update(-RUN_UP, null);
   await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
   if (S !== session) return; // quit while getting ready
-  const runUp = Math.max(RUN_UP, countIn * beat + 0.4);
+  const runUp = Math.max(RUN_UP, countIn * beat - down + 0.4);
   S.t0 = ctx.currentTime + runUp;
-  for (let k = countIn; k >= 1; k--) click(ctx, S.t0 - k * beat, k === countIn);
+  const vol = prefs.clickVol / 60;
+  for (let k = countIn; k >= 1; k--) click(ctx, S.t0 + down - k * beat, k === countIn, k % sub === 0 ? vol : vol * 0.5);
   if (sim0) startSim(S.passes[0], sim0);
   if (otherMic) setTimeout(() => flash("Different microphone", "var(--brass)", "Calibrated with another mic. Recalibrate for best timing."), 300);
   loop();
@@ -640,7 +644,9 @@ function loop() {
   $("#progress i").style.width = Math.max(0, Math.min(100, 100 * (t - cp.start) / (cp.end - cp.start))) + "%";
   // count-in numbers
   const cnt = $("#count");
-  if (t < 0) { const n = Math.ceil(-t / S.countBeat); cnt.hidden = n > S.countIn; cnt.textContent = n; } else cnt.hidden = true;
+  // count-in numbers: the beats of the bar before the first downbeat, "1 2 3 4"
+  const ci = Math.floor((t - (S.countDown - S.countIn * S.countBeat)) / S.countBeat + 1e-6);
+  if (t < 0 && ci >= 0 && ci < S.countIn) { cnt.hidden = false; cnt.textContent = Math.floor(ci / S.countSub) + 1; } else cnt.hidden = true;
   if (!S.ended && S.loop === "off" && game.finished(ctx.currentTime - t0 - S.comp - 0.1)) { S.ended = true; finish(); return; }
   S.raf = requestAnimationFrame(loop);
 }
