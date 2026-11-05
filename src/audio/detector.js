@@ -258,11 +258,38 @@ export function annotate(all, settings = DEFAULT_SETTINGS) {
 }
 
 /** Run the whole pipeline over a buffer of mono samples. Returns the finished session. */
+/**
+ * The low cut in front of the detector. Nothing the instrument plays is below its bottom note, but a
+ * backing drum's boom, room rumble and handling noise are, and a drum stroke landing with a note
+ * would otherwise muddy the very analysis window that note starts in. The cut-off sits at 3/4 of the
+ * bottom note's frequency: 440 Hz for a D whistle, 220 Hz for a flute an octave down.
+ */
+export const lowCutHz = settings => 0.75 * (settings.a4 || 440) * Math.pow(2, (LOW_D - 69) / 12);
+
+/** A 4th-order Butterworth high-pass that keeps its state between blocks: block → filtered copy. */
+export function makeLowCut(sr, fc) {
+  const stages = [0.5412, 1.3066].map(Q => {
+    const w = 2 * Math.PI * fc / sr, c = Math.cos(w), al = Math.sin(w) / (2 * Q), a0 = 1 + al;
+    return { b0: (1 + c) / 2 / a0, b1: -(1 + c) / a0, b2: (1 + c) / 2 / a0, a1: -2 * c / a0, a2: (1 - al) / a0, x1: 0, x2: 0, y1: 0, y2: 0 };
+  });
+  return block => {
+    const out = Float32Array.from(block);
+    for (const f of stages) {
+      for (let i = 0; i < out.length; i++) {
+        const x = out[i], y = f.b0 * x + f.b1 * f.x1 + f.b2 * f.x2 - f.a1 * f.y1 - f.a2 * f.y2;
+        f.x2 = f.x1; f.x1 = x; f.y2 = f.y1; f.y1 = y; out[i] = y;
+      }
+    }
+    return out;
+  };
+}
+
 export function analyze(samples, sr, settings = { ...DEFAULT_SETTINGS }) {
   const S = makeSession(settings), win = new Float32Array(WIN);
-  for (let pos = 0; pos + HOP <= samples.length; pos += HOP) {
+  const x = makeLowCut(sr, lowCutHz(settings))(samples);
+  for (let pos = 0; pos + HOP <= x.length; pos += HOP) {
     win.copyWithin(0, HOP);
-    win.set(samples.subarray(pos, pos + HOP), WIN - HOP);
+    win.set(x.subarray(pos, pos + HOP), WIN - HOP);
     feed(S, (pos + HOP) / sr - WIN / (2 * sr), win, sr);
   }
   closeSeg(S);

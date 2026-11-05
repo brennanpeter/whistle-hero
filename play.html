@@ -157,6 +157,18 @@ a{color:var(--brass)}
       </div>
     </div>
     <div class="field">
+      <span class="lab">Bodhrán <span class="muted">(B while playing)</span></span>
+      <div class="seg" role="group" aria-label="Bodhrán">
+        <button type="button" data-bodhran="off" aria-pressed="false">Off</button>
+        <button type="button" data-bodhran="on" aria-pressed="true">On</button>
+      </div>
+      <span class="hint" id="grooveHint"></span>
+    </div>
+    <div class="field">
+      <label for="bodhranVol">Bodhrán volume <output id="bodhranVolOut"></output></label>
+      <input id="bodhranVol" type="range" min="0" max="100" step="5">
+    </div>
+    <div class="field">
       <label for="clickVol">Click volume <output id="clickVolOut"></output></label>
       <input id="clickVol" type="range" min="0" max="100" step="5">
       <span class="hint">For the count-in and the metronome. With a microphone, a quieter click (or headphones) keeps it out of what the game hears.</span>
@@ -214,6 +226,13 @@ a{color:var(--brass)}
       <button type="button" data-metro="bar" aria-pressed="false">Once a bar</button>
     </div>
     </div>
+    <div class="field"><span class="lab">Bodhrán</span>
+      <div class="seg" role="group" aria-label="Bodhrán">
+        <button type="button" data-bodhran="off" aria-pressed="false">Off</button>
+        <button type="button" data-bodhran="on" aria-pressed="true">On</button>
+      </div>
+      <input id="bodhranVolP" type="range" min="0" max="100" step="5" aria-label="Bodhrán volume">
+    </div>
     <div class="row"><button class="primary" id="resumeBtn" type="button">Resume</button><button id="endBtn" type="button">End and see results</button><button id="restartBtn" type="button">Restart</button><button id="quitBtn" type="button">Quit</button></div>
   </div>
 </div>
@@ -247,6 +266,8 @@ import { parseAbc } from "./src/abc/abc.js";
 import { buildChart, shiftChart } from "./src/chart/chart.js";
 import { createGame } from "./src/game/engine.js";
 import { createListener } from "./src/audio/live.js";
+import { grooveFor, beatStrokes } from "./src/audio/grooves.js";
+import { annotateBeats, createBodhran } from "./src/audio/band.js";
 import { DEFAULT_SETTINGS } from "./src/audio/detector.js";
 import { renderAbc, PRESETS, PROFILES } from "./src/sim/whistle-synth.js";
 import { noteInfo } from "./src/whistle.js";
@@ -254,10 +275,11 @@ import { loadLibrary, saveLibrary, starterTunes, groupTunes } from "./src/librar
 import { loadCalibration, calibratedSettings, tuningFor } from "./src/calibration.js";
 import { INSTRUMENTS, instrument, loadInstrument, saveInstrument, referencePitch, shiftOf, soundingName } from "./src/instruments.js";
 const $ = s => document.querySelector(s);
+let S = null; // the game in progress: { ctx, game, view, ear, t0, comp, raf, tune, chart, … }
 
 /* ---------- preferences ---------- */
 const PREFS = "whistle-hero-play";
-let prefs = { tune: null, speed: 100, input: "mic", profile: "typical", monitor: true, latency: 0, mode: "fingers", loop: "off", halos: false, fingerings: true, simArtic: "cuts", metro: "off", clickVol: 60, spacingFingers: 200, spacingSheet: 200, v: 2 };
+let prefs = { tune: null, speed: 100, input: "mic", profile: "typical", monitor: true, latency: 0, mode: "fingers", loop: "off", halos: false, fingerings: true, simArtic: "cuts", metro: "off", clickVol: 60, bodhran: "on", bodhranVol: 70, spacingFingers: 200, spacingSheet: 200, v: 2 };
 try {
   const saved = JSON.parse(localStorage.getItem(PREFS) || "{}");
   // v2: halos default to off, and the sheet view's fingerings got a setting of their own
@@ -292,7 +314,7 @@ function fillTunes() {
   prefs.tune = sel.value;
 }
 fillTunes();
-$("#tune").addEventListener("change", e => { prefs.tune = e.target.value; savePrefs(); showSpeed(); });
+$("#tune").addEventListener("change", e => { prefs.tune = e.target.value; savePrefs(); showSpeed(); showGroove(); });
 const LOOP_HINT = { off: "Play the tune through once and see your results.",
   loop: "The tune repeats until you end it from the pause menu. Change the tempo between passes with − and + (or [ and ]).",
   ramp: "The tune repeats, 5 bpm faster every third pass. − and + (or [ and ]) still nudge it." };
@@ -367,13 +389,38 @@ function showMetro() {
 }
 function setMetro(m) {
   prefs.metro = m; savePrefs(); showMetro();
-  if (S && m === "off") silenceMetro();   // clicks already queued in the next moment are cancelled
-  if (S) S.metroRedo = true;              // and a change of mode applies from the next beat
+  if (S) S.bandRedo = true; // a change applies from the next beat (clicks already queued are cancelled)
 }
 $("#clickVol").value = prefs.clickVol;
 $("#clickVol").addEventListener("input", e => { prefs.clickVol = +e.target.value; savePrefs(); showMetro(); });
 document.querySelectorAll("[data-metro]").forEach(b => b.addEventListener("click", () => setMetro(b.dataset.metro)));
 showMetro();
+
+/* ---------- the backing band: bodhrán ---------- */
+function showBodhran() {
+  if (prefs.bodhran !== "on" && prefs.bodhran !== "off") prefs.bodhran = "on";
+  document.querySelectorAll("[data-bodhran]").forEach(b => b.setAttribute("aria-pressed", b.dataset.bodhran === prefs.bodhran));
+  $("#bodhranVol").value = $("#bodhranVolP").value = prefs.bodhranVol;
+  $("#bodhranVolOut").textContent = prefs.bodhranVol + "%";
+  if (S) S.bandOut.gain.value = bandGain();
+}
+const bandGain = () => prefs.bodhranVol / 70;
+function setBodhran(v) {
+  prefs.bodhran = v; savePrefs(); showBodhran();
+  if (S) S.bandRedo = true; // applies from the next beat (strokes already queued are cancelled)
+}
+for (const id of ["#bodhranVol", "#bodhranVolP"]) $(id).addEventListener("input", e => { prefs.bodhranVol = +e.target.value; savePrefs(); showBodhran(); });
+document.querySelectorAll("[data-bodhran]").forEach(b => b.addEventListener("click", () => setBodhran(b.dataset.bodhran)));
+showBodhran();
+// which groove the selected tune gets
+function showGroove() {
+  const t = lib.tunes.find(x => x.id === prefs.tune);
+  let g = null; try { g = t && grooveFor(parseAbc(t.abc)); } catch (e) {}
+  $("#grooveHint").textContent = !g ? "" : g.id === "plain"
+    ? "A plain beat for this tune (patterns for more rhythms are coming)."
+    : `${g.label} groove.`;
+}
+showGroove();
 $("#profile").addEventListener("change", e => { prefs.profile = e.target.value; savePrefs(); });
 $("#monitor").addEventListener("change", e => { prefs.monitor = e.target.checked; savePrefs(); });
 $("#latency").addEventListener("change", e => { prefs.latency = Math.max(-300, Math.min(300, +e.target.value || 0)); e.target.value = prefs.latency; savePrefs(); });
@@ -416,7 +463,6 @@ showInput();
 document.querySelectorAll("[data-input]").forEach(b => b.addEventListener("click", () => { prefs.input = b.dataset.input; savePrefs(); showInput(); }));
 
 /* ---------- a game session ---------- */
-let S = null; // { ctx, game, view, ear, t0, comp, raf, tune, chart, … }
 const msg = s => { $("#setupMsg").textContent = s; };
 
 async function start() {
@@ -466,8 +512,11 @@ async function start() {
   // The simulator's audio for the first pass takes a moment to render, so do it before the clock starts.
   const sim0 = prefs.input === "sim" ? renderSim(tune, bpm0) : null;
   S = { ctx, game, view, ear, t0: Infinity, comp, outLat, tune, chart, parsed, sims: [], frame: null, ended: false, raf: 0,
-        beats: chart.beats.slice(), beatI: 0, metroSrc: [], metroRedo: false,
+        beats: annotateBeats(chart.beats), beatI: 0, bandSrc: [], bandRedo: false,
+        groove: grooveFor(parsed), until: lastNoteT(chart),
         countIn, countBeat: beat, countSub: sub, countDown: down, loop: prefs.loop, passes: [{ start: 0, end: chart.end, bpm: bpm0, n: 1 }], baseBpm: bpm0, pass: 0 };
+  S.bandOut = ctx.createGain(); S.bandOut.gain.value = bandGain(); S.bandOut.connect(ctx.destination);
+  S.bodhran = createBodhran(ctx, S.bandOut);
   const session = S;
   if (location.hash === "#debug") window.__game = S; // for tests and troubleshooting
 
@@ -515,38 +564,50 @@ function click(ctx, at, strong, vol = prefs.clickVol / 60) {
   return src;
 }
 
-// The metronome clicks on the chart's beat grid (bar starts accented), scheduled a moment ahead on
-// the audio clock so it stays steady however the page is doing. Beats are heard at t0 + beat.t,
-// the same way the count-in is. Loop passes add their own beats, so tempo changes follow along.
-const METRO_AHEAD = 0.3;
-function scheduleMetro(ahead = METRO_AHEAD) {
+// The band plays on the chart's beat grid, scheduled a moment ahead on the audio clock so it stays
+// steady however the page is doing: the metronome's clicks (bar starts accented) and the bodhrán's
+// groove. Beats are heard at t0 + beat.t, the same way the count-in is. Loop passes add their own
+// beats, so tempo changes follow along.
+const BAND_AHEAD = 0.3;
+function scheduleBand(ahead = BAND_AHEAD) {
   const { ctx, t0, beats } = S, now = ctx.currentTime;
-  if (S.metroRedo) { // the mode changed: drop what's queued and pick up again from now
-    silenceMetro(); S.metroRedo = false;
+  if (S.bandRedo) { // a part was switched: drop what's queued and pick up again from now
+    silenceBand(); S.bandRedo = false;
     while (S.beatI > 0 && t0 + beats[S.beatI - 1].t > now) S.beatI--;
   }
+  const drum = prefs.bodhran === "on" && prefs.bodhranVol > 0;
   while (S.beatI < beats.length && t0 + beats[S.beatI].t < now + ahead) {
     const b = beats[S.beatI++], at = t0 + b.t;
-    if (at < now || prefs.metro === "off" || prefs.clickVol === 0) continue;
-    if (prefs.metro === "beat" || b.strong) S.metroSrc.push({ src: click(ctx, at, b.strong), at });
+    if (at >= now && prefs.metro !== "off" && prefs.clickVol > 0 && (prefs.metro === "beat" || b.strong))
+      S.bandSrc.push({ src: click(ctx, at, b.strong), at });
+    if (drum) for (const st of beatStrokes(S.groove, { t: at, dur: b.dur, beatInBar: b.inBar, bar: b.bar })) {
+      if (st.t < now || st.t > t0 + S.until + 1e-3) continue; // nothing after the tune's last note
+      S.bandSrc.push({ src: S.bodhran.play(st.t, st.kind, st.vel), at: st.t });
+    }
   }
-  while (S.metroSrc.length && S.metroSrc[0].at < now - 0.1) S.metroSrc.shift();
+  while (S.bandSrc.length && S.bandSrc[0].at < now - 0.1) S.bandSrc.shift();
 }
-function silenceMetro() {
+function silenceBand() {
   if (!S) return;
-  for (const c of S.metroSrc) if (c.at > S.ctx.currentTime) try { c.src.stop(); } catch (e) {}
-  S.metroSrc = [];
+  for (const c of S.bandSrc) if (c.at > S.ctx.currentTime) try { c.src.stop(); } catch (e) {}
+  S.bandSrc = [];
 }
+const lastNoteT = chart => chart.notes.length ? chart.notes[chart.notes.length - 1].t : 0;
 
 /* ---------- looping ---------- */
 // Tempo for pass n: the base tempo (which − / + change), plus 5 bpm every third pass when speeding up.
 const bpmFor = n => Math.max(5, S.baseBpm + (S.loop === "ramp" ? 5 * Math.floor((n - 1) / 3) : 0));
 function appendPass() {
-  scheduleMetro(2.5); // laying out a pass (and rendering the simulator's audio) can stall the page
+  scheduleBand(2.5); // laying out a pass (and rendering the simulator's audio) can stall the page
   const last = S.passes[S.passes.length - 1], n = last.n + 1, bpm = bpmFor(n);
   const part = shiftChart(buildChart(S.parsed, { bpm }), last.end,
     { firstNote: S.game.notes.length, firstOrnament: S.game.ornaments.length, loop: n });
-  S.game.extend(part); S.view.addChart(part); S.beats.push(...part.beats);
+  S.game.extend(part); S.view.addChart(part);
+  // its beats carry on the bar count, so phrases and fills stay in place
+  const prev = S.beats[S.beats.length - 1];
+  if (prev && part.beats.length) prev.dur = part.beats[0].t - prev.t;
+  S.beats.push(...annotateBeats(part.beats, { fromBar: prev ? prev.bar + 1 : 0 }));
+  S.until = lastNoteT(part);
   const p = { start: last.end, end: part.end, bpm, n }; S.passes.push(p);
   if (prefs.input === "sim") scheduleSim(p);
   showPassInfo();
@@ -627,7 +688,7 @@ function expectedAt(t) {
 function loop() {
   if (!S) return;
   const { ctx, t0, outLat, game, view, chart } = S;
-  scheduleMetro();
+  scheduleBand();
   const t = ctx.currentTime - t0 - outLat; // what the player is hearing now, in game time
   // Only declare a miss once the detector has listened past the note's window. Going by the clock
   // instead would call notes missed whenever the page stalls (rendering, garbage collection) while
@@ -722,6 +783,10 @@ addEventListener("keydown", e => {
   else if (e.key === "m" || e.key === "M") {
     const next = { off: "beat", beat: "bar", bar: "off" }[prefs.metro];
     setMetro(next); flash(METRO[next], "var(--grace)");
+  }
+  else if (e.key === "b" || e.key === "B") {
+    const next = prefs.bodhran === "on" ? "off" : "on";
+    setBodhran(next); flash(next === "on" ? "Bodhrán on" : "Bodhrán off", "var(--grace)");
   }
   else if (e.key === "[" || e.key === "-") nudgeTempo(-5);
   else if (e.key === "]" || e.key === "=" || e.key === "+") nudgeTempo(5);

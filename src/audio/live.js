@@ -9,7 +9,7 @@
 //   ear.on("samples", ({ d, t }) => …);    // the raw audio, a block at a time (d ends at ctx time t)
 //   await ear.useMicrophone();             // or: ear.input(someAudioNode)
 //   ear.stop();
-import { WIN, HOP, DEFAULT_SETTINGS, makeSession, feed } from "./detector.js";
+import { WIN, HOP, DEFAULT_SETTINGS, makeSession, feed, makeLowCut, lowCutHz } from "./detector.js";
 
 const WORKLET = `class Tap extends AudioWorkletProcessor{constructor(){super();this.b=new Float32Array(${HOP});this.i=0}
 process(inputs){const ch=inputs[0]&&inputs[0][0];if(ch){for(let k=0;k<ch.length;k++){this.b[this.i++]=ch[k];
@@ -23,9 +23,11 @@ export async function createListener(ctx, settings = { ...DEFAULT_SETTINGS }) {
   const emit = (type, e) => { for (const f of handlers[type]) f(e); };
   let lastCur = null, announced = new WeakSet(), segsSeen = 0, stream = null;
 
+  let lowCut = null, lowCutA4 = null; // follows the reference pitch, which an instrument change moves
   function chunk(d, tEnd) {
-    if (handlers.samples.length) emit("samples", { d, t: tEnd });
-    win.copyWithin(0, HOP); win.set(d, WIN - HOP);
+    if (handlers.samples.length) emit("samples", { d, t: tEnd }); // the raw audio (the mic check plays it back)
+    if (lowCutA4 !== S.settings.a4) { lowCut = makeLowCut(sr, lowCutHz(S.settings)); lowCutA4 = S.settings.a4; }
+    win.copyWithin(0, HOP); win.set(lowCut(d), WIN - HOP);
     const fr = feed(S, tEnd - WIN / (2 * sr), win, sr);
     emit("frame", fr);
     // a note is reported as soon as the detector commits to it

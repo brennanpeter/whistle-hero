@@ -66,14 +66,18 @@ export function buildChart(parsed, { bpm = null, graceMs = 35 } = {}) {
   const bars = parsed.bars.map((b, k) => ({ t: b.pos * spw, bar: b.bar, part: b.part, pass: b.pass, pickup: false }));
   if (parsed.bars.length > 1 && parsed.bars[1].pos < mi.barLen - 1e-9) bars[0].pickup = true;
   const beats = [];
-  const end = parsed.length * spw;
+  const end = parsed.length * spw, step = mi.beatLen * spw, full = mi.barLen * spw;
+  const forward = (b0, b1) => { for (let j = 0; j < mi.beatsPerBar; j++) { const x = b0 + j * step; if (x < b1 - 1e-6) beats.push({ t: x, strong: j === 0 }); } };
+  const back = (b0, b1) => { for (let x = b1 - step; x > b0 - 1e-6; x -= step) beats.push({ t: x, strong: false }); };
   for (let k = 0; k < bars.length; k++) {
-    const b0 = bars[k].t, b1 = k + 1 < bars.length ? bars[k + 1].t : end;
-    if (bars[k].pickup) {
-      for (let x = b1 - mi.beatLen * spw; x > b0 - 1e-6; x -= mi.beatLen * spw) beats.push({ t: x, strong: false });
-    } else {
-      for (let j = 0; j < mi.beatsPerBar; j++) { const x = b0 + j * mi.beatLen * spw; if (x < b1 - 1e-6) beats.push({ t: x, strong: j === 0 }); }
-    }
+    const b0 = bars[k].t, b1 = k + 1 < bars.length ? bars[k + 1].t : end, b2 = k + 2 < bars.length ? bars[k + 2].t : end;
+    const short = b1 - b0 < full - 1e-6;
+    if (short && !bars[k].pickup && k + 1 < bars.length && Math.abs(b2 - b0 - full) < 1e-6) {
+      // a short bar completed by the next: the bar before a repeat and the pickup played again after
+      // it. One bar's beats across the two, so the grid stays even.
+      forward(b0, b2); k++;
+    } else if (bars[k].pickup || (short && k + 1 < bars.length)) back(b0, b1); // counted back from the next downbeat
+    else forward(b0, b1);
   }
   beats.sort((a, b) => a.t - b.t);
   ornaments.sort((a, b) => a.t - b.t);

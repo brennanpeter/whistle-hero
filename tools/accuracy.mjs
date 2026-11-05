@@ -10,6 +10,10 @@ import { renderAbc, PRESETS, PROFILES } from "../src/sim/whistle-synth.js";
 import { analyze, DEFAULT_SETTINGS } from "../src/audio/detector.js";
 import { matchTruth } from "../src/audio/score.js";
 import { referencePitch, shiftOf } from "../src/instruments.js";
+import { parseAbc } from "../src/abc/abc.js";
+import { buildChart } from "../src/chart/chart.js";
+import { grooveFor } from "../src/audio/grooves.js";
+import { annotateBeats, drumStrokes, renderDrums } from "../src/audio/band.js";
 
 export const BASELINE = new URL("../test/accuracy-baseline.json", import.meta.url);
 
@@ -19,12 +23,24 @@ export const SCENARIOS = [
   ...["repeats", "reel"].flatMap(tune => ["clean", "typical"].map(profile => ({ tune, profile, articulation: "cuts" }))),
   // other instruments: the same playing, sounding lower (see src/instruments.js)
   ...["Bb", "lowD"].flatMap(inst => ["ornaments", "reel"].flatMap(tune => ["typical", "beginner"].map(profile => ({ tune, profile, articulation: "abc", inst })))),
+  // the backing bodhrán leaking into the mic, as loud as the whistle
+  ...["reel", "repeats"].flatMap(tune => ["typical", "beginner"].map(profile => ({ tune, profile, articulation: "cuts", drum: 1 }))),
 ];
-export const scenarioId = s => `${s.tune}/${s.profile}/${s.articulation}` + (s.inst ? `/${s.inst}` : "");
+export const scenarioId = s => `${s.tune}/${s.profile}/${s.articulation}` + (s.inst ? `/${s.inst}` : "") + (s.drum ? `/bodhran` : "");
 
 export function measure(s) {
   const r = renderAbc(PRESETS[s.tune].abc, { profile: s.profile, articulation: s.articulation, seed: 1, shift: shiftOf(s.inst) });
-  const S = analyze(r.samples, r.sr, { ...DEFAULT_SETTINGS, a4: referencePitch(s.inst || "D") });
+  let x = r.samples;
+  if (s.drum) {
+    // the band plays the tune's groove on its beat grid, starting where the synth starts (0.4 s in);
+    // its peak is set relative to the whistle's
+    const p = parseAbc(PRESETS[s.tune].abc), chart = buildChart(p, { bpm: r.truth.qpm });
+    let seed = 5; const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+    const drums = renderDrums(drumStrokes(annotateBeats(chart.beats), grooveFor(p), rnd), r.sr, x.length, 0.4);
+    let wp = 0, dp = 0; for (const v of x) wp = Math.max(wp, Math.abs(v)); for (const v of drums) dp = Math.max(dp, Math.abs(v));
+    x = Float32Array.from(x, (v, i) => v + drums[i] * s.drum * wp / (dp || 1));
+  }
+  const S = analyze(x, r.sr, { ...DEFAULT_SETTINGS, a4: referencePitch(s.inst || "D") });
   const m = matchTruth(r.truth, S.segs);
   return {
     notes: +(m.hitNotes / Math.max(1, m.notes)).toFixed(3),

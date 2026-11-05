@@ -37,10 +37,12 @@ What's done, and the plan for what comes next, grouped by theme in rough order. 
 
 ### 3. Backing band: engine and bodhrán
 
-- [ ] One band scheduler on the beat grid that everything plays through: metronome, bodhrán, later guitar, and a melody voice (the old "guide track" idea: the tune played quietly along with you, mainly for headphone users)
-- [ ] Synthesized bodhrán with reel and jig patterns to start
-- [ ] Mixer: a level for each part, remembered between visits
-- [ ] Check that the bodhrán leaking into the mic doesn't cost notes (as was done for the metronome)
+- [x] One band scheduler on the beat grid (`play.html`, with `src/audio/band.js`): the metronome and the bodhrán, scheduled ahead on the audio clock, following loop passes and tempo changes, switchable mid-tune (`M`, `B`)
+- [x] Synthesized bodhrán (`src/audio/bodhran.js`: skin, overtones, tipper click; down, up and top strokes) with reel and jig grooves (`src/audio/grooves.js`): variations every fourth bar, fills at phrase ends, a little human looseness. Other rhythms get a plain beat until step 4. It comes in on the first downbeat and stops with the last note.
+- [x] Levels for the bodhrán and the clicks, remembered between visits
+- [x] The bodhrán leaking into the mic: a drum stroke landing with a note muddied the detector's window (notes fell to ~70% at the whistle's level). A low cut in front of the detector, at 3/4 of the instrument's bottom note, removes the drum's boom (and room rumble) without touching the whistle: notes stay at 95–100% with the drum louder than the whistle. The accuracy check now includes the bodhrán.
+- [x] The beat grid stays even through a pickup played again after a repeat (it used to get an extra beat there)
+- [ ] A melody voice (the old "guide track" idea: the tune played quietly along with you, mainly for headphone users)
 
 ### 4. Grooves for every rhythm
 

@@ -40,3 +40,13 @@ test("every full bar of every starter tune adds up to its time signature", () =>
     });
   }
 });
+
+test("every starter tune's beat grid is even from start to finish, through repeats and pickups", () => {
+  for (const t of tunes) {
+    const chart = buildChart(parseAbc(t.abc), { bpm: 120 });
+    const gaps = chart.beats.slice(1).map((b, i) => b.t - chart.beats[i].t);
+    assert.ok(gaps.every(g => Math.abs(g - chart.beatSeconds) < 1e-6), `${t.title}: uneven beats ${[...new Set(gaps.map(g => g.toFixed(3)))]}`);
+    const strong = chart.beats.filter(b => b.strong).map(b => b.t);
+    assert.ok(strong.slice(1).every((x, i) => Math.abs(x - strong[i] - chart.beatSeconds * chart.beatsPerBar) < 1e-6), `${t.title}: bar starts uneven`);
+  }
+});

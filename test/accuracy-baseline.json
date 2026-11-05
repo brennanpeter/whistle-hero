@@ -17,27 +17,27 @@
   "scale/noisy/abc": {
     "notes": 0.962,
     "ornaments": null,
-    "extra": 4
+    "extra": 2
   },
   "ornaments/clean/abc": {
     "notes": 1,
     "ornaments": 1,
-    "extra": 0
+    "extra": 1
   },
   "ornaments/typical/abc": {
     "notes": 1,
-    "ornaments": 0.929,
-    "extra": 2
+    "ornaments": 0.857,
+    "extra": 3
   },
   "ornaments/beginner/abc": {
     "notes": 1,
     "ornaments": 0.857,
-    "extra": 6
+    "extra": 4
   },
   "ornaments/noisy/abc": {
     "notes": 0.783,
-    "ornaments": 0.214,
-    "extra": 23
+    "ornaments": 0.286,
+    "extra": 22
   },
   "repeats/clean/abc": {
     "notes": 1,
@@ -72,7 +72,7 @@
   "slurs/beginner/abc": {
     "notes": 1,
     "ornaments": null,
-    "extra": 0
+    "extra": 1
   },
   "slurs/noisy/abc": {
     "notes": 0.625,
@@ -92,12 +92,12 @@
   "reel/beginner/abc": {
     "notes": 0.976,
     "ornaments": 1,
-    "extra": 5
+    "extra": 6
   },
   "reel/noisy/abc": {
-    "notes": 0.698,
+    "notes": 0.714,
     "ornaments": 0.25,
-    "extra": 63
+    "extra": 65
   },
   "repeats/clean/cuts": {
     "notes": 0.95,
@@ -107,16 +107,16 @@
   "repeats/typical/cuts": {
     "notes": 1,
     "ornaments": 0.923,
-    "extra": 2
+    "extra": 1
   },
   "reel/clean/cuts": {
     "notes": 0.968,
-    "ornaments": 0.85,
-    "extra": 0
+    "ornaments": 0.9,
+    "extra": 1
   },
   "reel/typical/cuts": {
     "notes": 0.96,
-    "ornaments": 0.85,
+    "ornaments": 0.8,
     "extra": 6
   },
   "ornaments/typical/abc/Bb": {
@@ -132,12 +132,12 @@
   "reel/typical/abc/Bb": {
     "notes": 1,
     "ornaments": 0.625,
-    "extra": 4
+    "extra": 5
   },
   "reel/beginner/abc/Bb": {
     "notes": 1,
     "ornaments": 1,
-    "extra": 1
+    "extra": 2
   },
   "ornaments/typical/abc/lowD": {
     "notes": 1,
@@ -152,11 +152,31 @@
   "reel/typical/abc/lowD": {
     "notes": 1,
     "ornaments": 1,
-    "extra": 4
+    "extra": 5
   },
   "reel/beginner/abc/lowD": {
     "notes": 0.992,
     "ornaments": 1,
     "extra": 3
+  },
+  "reel/typical/cuts/bodhran": {
+    "notes": 0.952,
+    "ornaments": 0.8,
+    "extra": 5
+  },
+  "reel/beginner/cuts/bodhran": {
+    "notes": 0.96,
+    "ornaments": 0.75,
+    "extra": 4
+  },
+  "repeats/typical/cuts/bodhran": {
+    "notes": 1,
+    "ornaments": 0.923,
+    "extra": 1
+  },
+  "repeats/beginner/cuts/bodhran": {
+    "notes": 1,
+    "ornaments": 1,
+    "extra": 0
   }
 }
