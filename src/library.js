@@ -1,10 +1,25 @@
 // The player's tune library, kept in this browser's localStorage. Shared by the Tune Library
 // page and the game. Each tune: { id, abc, title, added, favorite, transpose, bpm, best }.
+// A first visit starts with the starter set (src/tunes/starter.js).
+import { parseAbcFile } from "./abc/abc.js";
+import { STARTER_ABC } from "./tunes/starter.js";
+
 export const STORE = "whistle-hero-library";
 
 export function loadLibrary() {
-  try { const s = JSON.parse(localStorage.getItem(STORE) || "null"); if (s && Array.isArray(s.tunes)) return s; } catch (e) {}
+  let raw = null;
+  try { raw = localStorage.getItem(STORE); const s = JSON.parse(raw || "null"); if (s && Array.isArray(s.tunes)) return s; } catch (e) {}
+  // First visit: start the library with the starter set (saved straight away, so both pages agree)
+  if (raw == null) { const lib = { tunes: starterTunes() }; saveLibrary(lib); return lib; }
   return { tunes: [] };
+}
+
+/** The starter set as library entries. Their ids are fixed, so adding them twice is easy to spot. */
+export function starterTunes() {
+  return parseAbcFile(STARTER_ABC).map((t, i) => ({
+    id: "starter-" + (i + 1), abc: t.abc.trim(), title: t.title || "Untitled", added: new Date().toISOString(),
+    favorite: false, transpose: 0, bpm: null, starter: true,
+  }));
 }
 
 /** Returns false when the browser refused to store it (private mode, storage full). */

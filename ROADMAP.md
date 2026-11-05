@@ -4,7 +4,7 @@ What's done, and the plan for what comes next, grouped by theme in rough order. 
 
 ## Ground rules
 
-- **Tunes.** Players bring their own ABC: paste it, or open an `.abc` file such as a tunebook downloaded from The Session. It stays in the player's browser. Nothing from The Session is fetched, bundled, scraped or used in tests: its data license forbids processing it with AI tools, which are used to build this project, and its tunes aren't ours to republish. Tunes that ship with the site are public-domain settings (see "Tunes for testing").
+- **Tunes.** Players bring their own ABC: paste it, or open an `.abc` file such as a tunebook downloaded from The Session. It stays in the player's browser. Nothing from The Session is fetched, bundled, scraped or used in tests: its data license forbids processing it with AI tools, which are used to build this project, and its tunes aren't ours to republish. Tunes that ship with the site are originals or public-domain settings (see "Tunes for testing").
 - **One engine, several views.** The engine judges notes; each view draws the same chart and judgments its own way.
 - **Fingerings throughout.** Charts, scoring and views work in D-whistle fingerings. Other instruments only change what the detector listens for.
 - **The accuracy check guards the detector.** `npm run accuracy` prints the table; `npm test` fails if any simulated scenario scores worse than `test/accuracy-baseline.json`. Improve, then `npm run accuracy -- --update`.
@@ -31,7 +31,8 @@ What's done, and the plan for what comes next, grouped by theme in rough order. 
 
 ### 2. Tunes for testing
 
-- [ ] A public-domain starter set that ships with the site: one or two tunes for each rhythm (reel, jig, hornpipe, polka, slide, slip jig, waltz, strathspey, mazurka, barndance), set from old printed collections such as O'Neill's (1903), avoiding tunes with a known modern composer. Loaded into the library on first visit, alongside the player's own.
+- [x] A starter set that ships with the site (`src/tunes/starter.js`), one or more tunes for each rhythm (reel, jig, hornpipe, polka, slide, slip jig, waltz, strathspey, mazurka, barndance): ten originals written for the game, plus The Kesh and Drowsy Maggie as simple traditional settings from memory (marked "check it by ear"). Loaded into the library on a first visit; "Add starter tunes" in the Tune Library adds them to an existing one. Tests check every tune parses cleanly, needs no half-holing, and has full bars.
+- [ ] More traditional tunes, set from public-domain scans (O'Neill's 1903 collection on archive.org or IMSLP) where every note can be checked
 - [ ] A short guide to bringing in your own tunebook (download it from The Session as `.abc`, then open it in the Tune Library)
 
 ### 3. Backing band: engine and bodhrán

@@ -16,7 +16,7 @@ Playable, early. See [ROADMAP.md](ROADMAP.md) for what's done and what comes nex
 
 - **`whistle-ear.html`**: a test bench for pitch detection. It runs the McLeod pitch method on live mic input or a recording, segments the stream into notes, and filters out overtone jumps and short "sliver" transients.
 - **`whistle-sim.html`**: a synthetic D whistle for testing without playing. Paste ABC, pick a player (clean, typical, beginner, noisy pub), and it plays the tune with tonguing, cuts, taps, rolls, slides, vibrato and deliberate mistakes. **Send to Whistle Ear** loads the clip into the test bench along with the notes it meant to play, so you can see what the detector got right and wrong.
-- **`tunes.html`**: the Tune Library. Paste ABC (one tune or a whole file) or open an `.abc` file. It checks whether each tune fits the D whistle (half-holed notes, range), suggests a transposition when one helps, keeps tunes with the same name together as settings, and shows the chart the game will play: notes, cuts and taps, bars, beats, parts and repeats. Favorites, search, and backup to a file are included. Tunes can be played with the simulator or sent to Whistle Ear.
+- **`tunes.html`**: the Tune Library. A first visit starts it with a **starter set** of twelve tunes, one or more for each rhythm (ten originals, plus The Kesh and Drowsy Maggie); **Add starter tunes** brings them into an existing library. Paste ABC (one tune or a whole file) or open an `.abc` file. It checks whether each tune fits the D whistle (half-holed notes, range), suggests a transposition when one helps, keeps tunes with the same name together as settings, and shows the chart the game will play: notes, cuts and taps, bars, beats, parts and repeats. Favorites, search, and backup to a file are included. Tunes can be played with the simulator or sent to Whistle Ear.
 
 Tunes come in as ABC you paste or open yourself. Whistle Hero doesn't download from tune sites. The Session's data license doesn't allow it to be processed with AI tools, which are used to build this project, so the project stays clear of it.
 
@@ -73,6 +73,7 @@ src/game/engine.js      judging and scoring (no DOM, tested in Node)
 src/game/views/         ways of drawing the game: finger-view.js (three.js), sheet-view.js (abcjs)
 src/audio/live.js       real-time detection from the mic or the simulator
 src/library.js          the tune library in browser storage
+src/tunes/starter.js    the starter set: originals and public-domain tunes that ship with the site
 src/nav.js              the navigation bar at the top of every page
 src/calibration.js      calibration maths (gate, tuning, latency) and storage
 src/sim/whistle-synth.js

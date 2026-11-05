@@ -125,7 +125,8 @@ details summary{cursor:pointer;font-weight:500}
       <h2>Add tunes <span class="eyebrow">ABC notation</span></h2>
       <div class="actions">
         <label class="btn small" for="fileIn">Open .abc file<input id="fileIn" class="sr" type="file" accept=".abc,.txt,text/plain"></label>
-        <button id="exampleBtn" class="small" type="button">Add example tunes</button>
+        <button id="starterBtn" class="small" type="button">Add starter tunes</button>
+        <button id="exampleBtn" class="small" type="button">Add test examples</button>
       </div>
     </div>
     <textarea id="paste" rows="6" spellcheck="false" placeholder="X:1&#10;T:Tune name&#10;R:reel&#10;M:4/4&#10;L:1/8&#10;K:D&#10;|:FA~A2 dAFA|..." aria-label="ABC to add"></textarea>
@@ -202,6 +203,7 @@ import { parseAbc, parseAbcFile } from "./src/abc/abc.js";
 import { checkPlayability, suggestTranspose, describeTranspose } from "./src/abc/playability.js";
 import { buildChart } from "./src/chart/chart.js";
 import { renderAbc, PRESETS, PROFILES } from "./src/sim/whistle-synth.js";
+import { STARTER_ABC } from "./src/tunes/starter.js";
 import { noteName, LOW_D } from "./src/whistle.js";
 import { STORE, loadLibrary, saveLibrary, normTitle as norm, groupTunes } from "./src/library.js";
 const $ = s => document.querySelector(s);
@@ -246,6 +248,7 @@ function addAbc(text, label) {
 }
 $("#addBtn").addEventListener("click", () => { const v = $("#paste").value; if (!v.trim()) { status("Paste some ABC first."); return; } addAbc(v); $("#paste").value = ""; });
 $("#fileIn").addEventListener("change", async e => { const f = e.target.files[0]; e.target.value = ""; if (f) addAbc(await f.text(), f.name); });
+$("#starterBtn").addEventListener("click", () => addAbc(STARTER_ABC, "Starter tunes"));
 $("#exampleBtn").addEventListener("click", () => addAbc(Object.values(PRESETS).map((p, i) => p.abc.startsWith("X:") ? p.abc : `X:${i + 1}\n${p.abc}`).join("\n\n"), "Examples"));
 
 /* ---------- backup ---------- */
@@ -288,7 +291,7 @@ function renderList() {
   const list = $("#list"); list.innerHTML = "";
   if (!shown.length) {
     const p = document.createElement("p"); p.className = "empty";
-    p.textContent = !lib.tunes.length ? "Nothing here yet. Paste ABC above, open an .abc file, or add the example tunes." : "No tunes match.";
+    p.textContent = !lib.tunes.length ? "Nothing here yet. Paste ABC above, open an .abc file, or add the starter tunes." : "No tunes match.";
     list.append(p); return;
   }
   for (const g of shown) {

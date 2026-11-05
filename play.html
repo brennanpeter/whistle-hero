@@ -250,7 +250,7 @@ import { createListener } from "./src/audio/live.js";
 import { DEFAULT_SETTINGS } from "./src/audio/detector.js";
 import { renderAbc, PRESETS, PROFILES } from "./src/sim/whistle-synth.js";
 import { noteInfo } from "./src/whistle.js";
-import { loadLibrary, saveLibrary, groupTunes } from "./src/library.js";
+import { loadLibrary, saveLibrary, starterTunes, groupTunes } from "./src/library.js";
 import { loadCalibration, calibratedSettings, tuningFor } from "./src/calibration.js";
 import { INSTRUMENTS, instrument, loadInstrument, saveInstrument, referencePitch, shiftOf, soundingName } from "./src/instruments.js";
 const $ = s => document.querySelector(s);
@@ -282,11 +282,8 @@ function fillTunes() {
   }
   if (!groups.length) {
     sel.append(new Option("Your library is empty", "")); sel.disabled = true;
-    $("#tuneHint").innerHTML = ""; const b = document.createElement("button"); b.type = "button"; b.textContent = "Add the example tunes";
-    b.addEventListener("click", () => {
-      for (const [i, p] of Object.values(PRESETS).entries()) lib.tunes.push({ id: Date.now().toString(36) + i, abc: `X:${i + 1}\n${p.abc}`, title: p.abc.match(/^T:(.*)$/m)?.[1].trim() || p.label, added: new Date().toISOString(), favorite: false, transpose: 0, bpm: null });
-      saveLibrary(lib); fillTunes();
-    });
+    $("#tuneHint").innerHTML = ""; const b = document.createElement("button"); b.type = "button"; b.textContent = "Add the starter tunes";
+    b.addEventListener("click", () => { lib.tunes.push(...starterTunes()); saveLibrary(lib); fillTunes(); });
     $("#tuneHint").append("Paste tunes in the Tune Library, or ", b);
     $("#startBtn").disabled = true; return;
   }

@@ -127,3 +127,10 @@ test("transpose shifts every note and keeps the written pitch", () => {
   assert.equal(notes(low)[0].written, 69);
   assert.equal(notes(low)[0].midi, 81);
 });
+
+test("a note tied over the bar line just before a repeat keeps both bar lines", () => {
+  const p = parseAbc("X:1\nM:3/4\nL:1/8\nK:D\n|:d4 f2|d6-|d4 A2:|");
+  // pass 1: bars at 0, 0.75, 1.5 (inside the tied d), pass 2 starts at 2.25
+  assert.deepEqual(p.bars.slice(0, 4).map(b => b.pos), [0, 0.75, 1.5, 2.25]);
+  assert.equal(p.events.filter(e => e.t === "note").length, 8, "four notes, played twice");
+});

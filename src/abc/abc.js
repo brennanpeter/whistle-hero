@@ -232,12 +232,11 @@ export function parseAbc(text, opts = {}) {
 
   // Expand repeats and 1st/2nd endings, recording bars, parts and passes as we go.
   const events = [], bars = [];
-  let repStart = 0, pass = 1, skip = false, barBack = 0;
+  let repStart = 0, pass = 1, skip = false;
   let pos = 0, barNo = -1, sinceBar = 0, newBar = true, part = 0, partNotes = 0, partBars = 0, newPart = false;
   const emit = it => {
     if (newPart) { part++; partNotes = 0; partBars = 0; newPart = false; newBar = true; }
-    if (newBar) { barNo++; partBars++; bars.push({ pos: pos - barBack, bar: barNo, part, pass }); newBar = false; }
-    barBack = 0;
+    if (newBar) { barNo++; partBars++; bars.push({ pos, bar: barNo, part, pass }); newBar = false; }
     events.push({ ...it, pos, bar: barNo, part, pass });
     pos += it.len; sinceBar++; partNotes++;
   };
@@ -245,13 +244,19 @@ export function parseAbc(text, opts = {}) {
   for (let k = 0; k < items.length; k++) {
     const it = items[k];
     if (it.t !== "bar") { if (!skip) emit(it); continue; }
-    barBack = it.back || 0;
     if (skip) {
       if (it.ending && it.ending !== 1) { skip = false; pass = 2; barLine(); }
       if (!skip && it.start) repStart = k + 1;
       continue;
     }
     barLine();
+    // A bar line inside a tied note (the tie was merged into one note): the bar starts here, partway
+    // through that note, so record it now, before a repeat sign straight after could swallow it. The
+    // rest of the note is in this bar, so the next bar line starts another.
+    if (it.back && newBar && !newPart) {
+      barNo++; partBars++; bars.push({ pos: pos - it.back, bar: barNo, part, pass });
+      newBar = false; sinceBar = 1;
+    }
     if (it.ending === 1 && pass === 2) { skip = true; continue; }
     if (it.end) {
       if (pass === 1) { pass = 2; k = repStart - 1; continue; }
