@@ -71,6 +71,7 @@ input[type=number]{font:14px var(--f-mono);color:var(--ink);background:var(--bg)
 .field{display:flex;flex-direction:column;gap:6px}
 .field>label,.field>.lab{font-weight:500;display:flex;justify-content:space-between;gap:8px}
 .field>label.check{justify-content:flex-start;font-weight:400}
+.field .hint.warn{color:var(--brass)}
 .field output{font:13px var(--f-mono);color:var(--brass)}
 .field .hint{font-size:13px;color:var(--muted)}
 .seg{display:flex;gap:6px;flex-wrap:wrap}
@@ -169,6 +170,18 @@ a{color:var(--brass)}
       <input id="bodhranVol" type="range" min="0" max="100" step="5">
     </div>
     <div class="field">
+      <span class="lab">Guide melody <span class="muted">(G while playing)</span></span>
+      <div class="seg" role="group" aria-label="Guide melody">
+        <button type="button" data-guide="off" aria-pressed="true">Off</button>
+        <button type="button" data-guide="on" aria-pressed="false">On</button>
+      </div>
+      <span class="hint" id="guideHint"></span>
+    </div>
+    <div class="field">
+      <label for="guideVol">Guide volume <output id="guideVolOut"></output></label>
+      <input id="guideVol" type="range" min="0" max="100" step="5">
+    </div>
+    <div class="field">
       <label for="clickVol">Click volume <output id="clickVolOut"></output></label>
       <input id="clickVol" type="range" min="0" max="100" step="5">
       <span class="hint">For the count-in and the metronome. With a microphone, a quieter click (or headphones) keeps it out of what the game hears.</span>
@@ -233,6 +246,13 @@ a{color:var(--brass)}
       </div>
       <input id="bodhranVolP" type="range" min="0" max="100" step="5" aria-label="Bodhrán volume">
     </div>
+    <div class="field"><span class="lab">Guide melody</span>
+      <div class="seg" role="group" aria-label="Guide melody">
+      <button type="button" data-guide="off" aria-pressed="true">Off</button>
+      <button type="button" data-guide="on" aria-pressed="false">On</button>
+    </div>
+      <input id="guideVolP" type="range" min="0" max="100" step="5" aria-label="Guide volume">
+    </div>
     <div class="row"><button class="primary" id="resumeBtn" type="button">Resume</button><button id="endBtn" type="button">End and see results</button><button id="restartBtn" type="button">Restart</button><button id="quitBtn" type="button">Quit</button></div>
   </div>
 </div>
@@ -279,7 +299,7 @@ let S = null; // the game in progress: { ctx, game, view, ear, t0, comp, raf, tu
 
 /* ---------- preferences ---------- */
 const PREFS = "whistle-hero-play";
-let prefs = { tune: null, speed: 100, input: "mic", profile: "typical", monitor: true, latency: 0, mode: "fingers", loop: "off", halos: false, fingerings: true, simArtic: "cuts", metro: "off", clickVol: 60, bodhran: "on", bodhranVol: 70, spacingFingers: 200, spacingSheet: 200, v: 2 };
+let prefs = { tune: null, speed: 100, input: "mic", profile: "typical", monitor: true, latency: 0, mode: "fingers", loop: "off", halos: false, fingerings: true, simArtic: "cuts", metro: "off", clickVol: 60, bodhran: "on", bodhranVol: 70, guide: "off", guideVol: 50, spacingFingers: 200, spacingSheet: 200, v: 2 };
 try {
   const saved = JSON.parse(localStorage.getItem(PREFS) || "{}");
   // v2: halos default to off, and the sheet view's fingerings got a setting of their own
@@ -421,6 +441,35 @@ function showGroove() {
     : `${g.label} groove.`;
 }
 showGroove();
+
+/* ---------- the backing band: guide melody ---------- */
+// The tune itself, played by the simulated whistle (a clean player, written ornaments) in time with
+// you. It goes to the speakers only, never into the detector, but a microphone hears speakers: with
+// the mic, it's for headphones.
+function showGuide() {
+  if (prefs.guide !== "on" && prefs.guide !== "off") prefs.guide = "off";
+  document.querySelectorAll("[data-guide]").forEach(b => b.setAttribute("aria-pressed", b.dataset.guide === prefs.guide));
+  $("#guideVol").value = $("#guideVolP").value = prefs.guideVol;
+  $("#guideVolOut").textContent = prefs.guideVol + "%";
+  const h = $("#guideHint");
+  h.textContent = prefs.input === "mic"
+    ? "Wear headphones with the guide: through speakers the microphone hears it too, and the game counts it as your playing."
+    : "The tune played along with you, to follow by ear.";
+  h.classList.toggle("warn", prefs.input === "mic" && prefs.guide === "on");
+  if (S) S.guideOut.gain.value = prefs.guideVol / 100;
+}
+function setGuide(v) {
+  prefs.guide = v; savePrefs(); showGuide();
+  if (!S) return;
+  if (v === "off") stopGuide();
+  else if (isFinite(S.t0)) {
+    scheduleBand(2.5); // rendering the guide takes a moment: keep the band going through it
+    for (const p of S.passes) startGuide(p); // the passes still to come, from where they've got to
+  }
+}
+for (const id of ["#guideVol", "#guideVolP"]) $(id).addEventListener("input", e => { prefs.guideVol = +e.target.value; savePrefs(); showGuide(); });
+document.querySelectorAll("[data-guide]").forEach(b => b.addEventListener("click", () => setGuide(b.dataset.guide)));
+showGuide();
 $("#profile").addEventListener("change", e => { prefs.profile = e.target.value; savePrefs(); });
 $("#monitor").addEventListener("change", e => { prefs.monitor = e.target.checked; savePrefs(); });
 $("#latency").addEventListener("change", e => { prefs.latency = Math.max(-300, Math.min(300, +e.target.value || 0)); e.target.value = prefs.latency; savePrefs(); });
@@ -460,7 +509,7 @@ function showInput() {
     : "Play on your whistle. Use headphones for any backing sound, so the game hears only you.";
 }
 showInput();
-document.querySelectorAll("[data-input]").forEach(b => b.addEventListener("click", () => { prefs.input = b.dataset.input; savePrefs(); showInput(); }));
+document.querySelectorAll("[data-input]").forEach(b => b.addEventListener("click", () => { prefs.input = b.dataset.input; savePrefs(); showInput(); showGuide(); }));
 
 /* ---------- a game session ---------- */
 const msg = s => { $("#setupMsg").textContent = s; };
@@ -511,12 +560,14 @@ async function start() {
   const view = createView(stage, chart, { parsed, halos: aidOn(), spacing: (prefs.mode === "sheet" ? prefs.spacingSheet : prefs.spacingFingers) / 100 });
   // The simulator's audio for the first pass takes a moment to render, so do it before the clock starts.
   const sim0 = prefs.input === "sim" ? renderSim(tune, bpm0) : null;
+  const guide0 = prefs.guide === "on" ? renderGuide(tune, bpm0) : null;
   S = { ctx, game, view, ear, t0: Infinity, comp, outLat, tune, chart, parsed, sims: [], frame: null, ended: false, raf: 0,
         beats: annotateBeats(chart.beats), beatI: 0, bandSrc: [], bandRedo: false,
         groove: grooveFor(parsed), until: lastNoteT(chart),
         countIn, countBeat: beat, countSub: sub, countDown: down, loop: prefs.loop, passes: [{ start: 0, end: chart.end, bpm: bpm0, n: 1 }], baseBpm: bpm0, pass: 0 };
   S.bandOut = ctx.createGain(); S.bandOut.gain.value = bandGain(); S.bandOut.connect(ctx.destination);
   S.bodhran = createBodhran(ctx, S.bandOut);
+  S.guideOut = ctx.createGain(); S.guideOut.gain.value = prefs.guideVol / 100; S.guideOut.connect(ctx.destination); S.guides = [];
   const session = S;
   if (location.hash === "#debug") window.__game = S; // for tests and troubleshooting
 
@@ -548,6 +599,7 @@ async function start() {
   const vol = prefs.clickVol / 60;
   for (let k = countIn; k >= 1; k--) click(ctx, S.t0 + down - k * beat, k === countIn, k % sub === 0 ? vol : vol * 0.5);
   if (sim0) startSim(S.passes[0], sim0);
+  if (guide0) startGuide(S.passes[0], guide0);
   if (otherMic) setTimeout(() => flash("Different microphone", "var(--brass)", "Calibrated with another mic. Recalibrate for best timing."), 300);
   loop();
 }
@@ -610,13 +662,34 @@ function appendPass() {
   S.until = lastNoteT(part);
   const p = { start: last.end, end: part.end, bpm, n }; S.passes.push(p);
   if (prefs.input === "sim") scheduleSim(p);
+  startGuide(p);
   showPassInfo();
 }
 // the simulated player plays each pass from its own rendering, lined up on the game clock
 const renderSim = (tune, bpm) => renderAbc(tune.abc,
   { profile: prefs.profile, articulation: prefs.simArtic, bpm, transpose: tune.transpose || 0, shift: shiftOf(inst), seed: 1 + Math.floor(Math.random() * 9999) });
 function scheduleSim(p) { startSim(p, renderSim(S.tune, p.bpm)); }
+// the guide: the same synth, played cleanly with the written ornaments
+const renderGuide = (tune, bpm) => renderAbc(tune.abc,
+  { profile: "clean", articulation: "abc", bpm, transpose: tune.transpose || 0, shift: shiftOf(inst), seed: 7 });
+function startGuide(p, r = null) {
+  if (!S || prefs.guide !== "on" || S.guides.some(g => g.p === p) || S.t0 + p.end <= S.ctx.currentTime) return;
+  const src = playPass(p, r || renderGuide(S.tune, p.bpm), S.guideOut);
+  S.guides.push({ src, p });
+}
+function stopGuide() {
+  if (!S) return;
+  for (const g of S.guides) try { g.src.stop(); } catch (e) {}
+  S.guides = [];
+}
 function startSim(p, r) {
+  const air = S.ctx.createGain();
+  S.ear.input(air);
+  if (prefs.monitor) { const g = S.ctx.createGain(); g.gain.value = 0.8; air.connect(g).connect(S.ctx.destination); }
+  S.sims.push(playPass(p, r, air));
+}
+// Play one rendered pass into `out`, lined up on the game clock (from partway in, if it's already begun).
+function playPass(p, r, out) {
   const ctx = S.ctx, buf = ctx.createBuffer(1, r.samples.length, r.sr); buf.copyToChannel(r.samples, 0);
   const src = ctx.createBufferSource(); src.buffer = buf;
   // Each pass is rendered on its own, so the simulated player stops the air for 30 ms where one pass
@@ -625,11 +698,10 @@ function startSim(p, r) {
   const air = ctx.createGain(), stopAt = S.t0 + p.end;
   air.gain.setValueAtTime(1, Math.max(ctx.currentTime, stopAt - 0.035));
   air.gain.linearRampToValueAtTime(0, Math.max(ctx.currentTime, stopAt - 0.03));
-  src.connect(air); S.ear.input(air);
-  if (prefs.monitor) { const g = ctx.createGain(); g.gain.value = 0.8; air.connect(g).connect(ctx.destination); }
+  src.connect(air).connect(out);
   const lead = r.truth.notes[0].start - S.chart.notes[0].t; // the synth's lead-in before the first note
   src.start(Math.max(ctx.currentTime, S.t0 + p.start - lead), Math.max(0, ctx.currentTime - (S.t0 + p.start - lead)));
-  S.sims.push(src);
+  return src;
 }
 function showPassInfo() {
   if (!S) return;
@@ -723,6 +795,7 @@ function stopSession() {
   if (!S) return;
   cancelAnimationFrame(S.raf);
   for (const src of S.sims) { try { src.stop(); } catch (e) {} }
+  stopGuide();
   S.ear.stop(); S.ctx.close(); S.view.destroy();
   for (const id of ["#hud", "#heard", "#pauseBtn", "#progress", "#count", "#tempoCtl"]) $(id).hidden = true;
   $("#judge").classList.remove("show");
@@ -783,6 +856,10 @@ addEventListener("keydown", e => {
   else if (e.key === "m" || e.key === "M") {
     const next = { off: "beat", beat: "bar", bar: "off" }[prefs.metro];
     setMetro(next); flash(METRO[next], "var(--grace)");
+  }
+  else if (e.key === "g" || e.key === "G") {
+    const next = prefs.guide === "on" ? "off" : "on";
+    setGuide(next); flash(next === "on" ? "Guide on" : "Guide off", "var(--grace)");
   }
   else if (e.key === "b" || e.key === "B") {
     const next = prefs.bodhran === "on" ? "off" : "on";

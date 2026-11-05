@@ -42,7 +42,7 @@ What's done, and the plan for what comes next, grouped by theme in rough order. 
 - [x] Levels for the bodhrán and the clicks, remembered between visits
 - [x] The bodhrán leaking into the mic: a drum stroke landing with a note muddied the detector's window (notes fell to ~70% at the whistle's level). A low cut in front of the detector, at 3/4 of the instrument's bottom note, removes the drum's boom (and room rumble) without touching the whistle: notes stay at 95–100% with the drum louder than the whistle. The accuracy check now includes the bodhrán.
 - [x] The beat grid stays even through a pickup played again after a repeat (it used to get an extra beat there)
-- [ ] A melody voice (the old "guide track" idea: the tune played quietly along with you, mainly for headphone users)
+- [x] Guide melody: the tune played by the simulated whistle (a clean player, written ornaments) in time with you, following loop passes and tempo changes, with its own volume; `G` switches it mid-tune. It never goes into the detector, but a microphone hears speakers, so with the mic the setup screen says to wear headphones.
 
 ### 4. Grooves for every rhythm
 
