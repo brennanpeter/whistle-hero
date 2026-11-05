@@ -62,7 +62,7 @@ input[type=number]{font:14px var(--f-mono);color:var(--ink);background:var(--bg)
 .check{display:flex;align-items:center;gap:8px;font-weight:400}
 
 /* panels */
-.overlay{position:fixed;inset:0;display:grid;place-items:center;padding:16px;background:rgba(8,11,10,.82);overflow-y:auto}
+.overlay{position:fixed;inset:0;display:grid;place-items:center;padding:16px;padding-top:calc(var(--nav-h,0px) + 16px);background:rgba(8,11,10,.82);overflow-y:auto}
 .card{width:min(560px,100%);background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:22px;display:flex;flex-direction:column;gap:16px;margin:auto}
 .card h1{margin:0;font:800 46px/.95 var(--f-display);text-transform:uppercase;letter-spacing:.01em}
 .card h2{margin:0;font:800 30px/1 var(--f-display);text-transform:uppercase}
@@ -86,6 +86,7 @@ input[type=number]{font:14px var(--f-mono);color:var(--ink);background:var(--bg)
 a{color:var(--brass)}
 @media (max-width:520px){.hud .score{font-size:30px}.judge{font-size:34px}.card h1{font-size:38px}.heard{top:auto;bottom:max(64px,calc(env(safe-area-inset-bottom) + 50px));left:16px;transform:none}.hud .tune{max-width:45vw;font-size:18px}}
 </style>
+<script type="module" src="./src/nav.js"></script>
 </head>
 <body>
 <div id="stage"></div>
@@ -350,6 +351,15 @@ for (const k of ["spacingFingers", "spacingSheet"]) {
   $("#" + k).addEventListener("input", e => { prefs[k] = +e.target.value; savePrefs(); show(); });
 }
 $("#speed").addEventListener("input", e => { prefs.speed = +e.target.value; showSpeed(); savePrefs(); });
+
+/* ---------- site navigation: shown on the setup, pause and results screens, hidden while playing ---------- */
+{
+  const screens = ["#setup", "#paused", "#results"].map(q => $(q));
+  const sync = () => document.documentElement.classList.toggle("playing", screens.every(el => el.hidden));
+  const watch = new MutationObserver(sync);
+  for (const el of screens) watch.observe(el, { attributes: true, attributeFilter: ["hidden"] });
+  sync();
+}
 
 /* ---------- metronome ---------- */
 const METRO = { off: "Metronome off", beat: "Metronome: every beat", bar: "Metronome: once a bar" };

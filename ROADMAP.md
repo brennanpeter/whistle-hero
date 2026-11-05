@@ -1,88 +1,96 @@
 # Roadmap
 
-Rough order of work for Whistle Hero. Each phase leans on the one before it. Check items off as they land.
+What's done, and the plan for what comes next, grouped by theme in rough order. Check items off as they land.
 
-## Phase 0: Foundations
+## Ground rules
 
-- [x] **Whistle Ear**, a pitch-detection test bench (McLeod pitch method, note segmentation, overtone and sliver filtering)
-- [x] **Whistle Sim**, a synthetic D whistle that plays ABC with tonguing, cuts, taps, rolls, slides, vibrato and human sloppiness, and outputs the list of notes it meant to play
-- [x] Move the detector out of `whistle-ear.html` into a shared module (`src/audio/`) so Whistle Ear, the game and the tests all run the same code
-- [x] Move the sim's ABC parser into `src/abc/` for the same reason (the game needs it for charts)
-- [x] `npm test`: render Whistle Sim scenarios, run the detector on them, and fail if accuracy drops below the saved baseline for any scenario. Run it in GitHub Actions on every push.
-- [x] Switch to Vite (done at the start of Phase 3); GitHub Pages deployment is listed under Phase 3
+- **Tunes.** Players bring their own ABC: paste it, or open an `.abc` file such as a tunebook downloaded from The Session. It stays in the player's browser. Nothing from The Session is fetched, bundled, scraped or used in tests: its data license forbids processing it with AI tools, which are used to build this project, and its tunes aren't ours to republish. Tunes that ship with the site are public-domain settings (see "Tunes for testing").
+- **One engine, several views.** The engine judges notes; each view draws the same chart and judgments its own way.
+- **Fingerings throughout.** Charts, scoring and views work in D-whistle fingerings. Other instruments only change what the detector listens for.
+- **The accuracy check guards the detector.** `npm run accuracy` prints the table; `npm test` fails if any simulated scenario scores worse than `test/accuracy-baseline.json`. Improve, then `npm run accuracy -- --update`.
 
-## Phase 1: Harden the detector
+## Done
 
-`npm run accuracy` prints the full table. Each fix should raise those numbers; then `npm run accuracy -- --update` locks the gain in.
+**Foundations.** Whistle Ear (a pitch-detection test bench) and Whistle Sim (a synthetic whistle and player that plays ABC with tonguing, cuts, taps, rolls, slides, vibrato and mistakes, and reports what it meant to play). Shared modules in `src/`, `npm test` with an accuracy baseline, GitHub Actions on every push, Vite, and deployment to GitHub Pages once the tests pass.
 
-**Where it stands:** clean, typical and beginner players score 95–100% of notes and 85–100% of cuts and taps. Before Phase 1, typical playing scored 80–100% of notes and 64–92% of ornaments (partly because of a simulator flaw, fixed below). The noisy pub (a mic a couple of metres away in a live room) is still at 63–96% of notes and about 20–25% of ornaments.
+**Detector.** McLeod pitch method with note segmentation; tongued repeats in live rooms; slides folded into the note they land on; two-frame cuts and taps; exact-match overblow filtering; glides and finger-crossing blips filtered as transients. Clean, typical and beginner players score 95–100% of notes and 85–100% of ornaments in simulation.
 
-- [x] **Tongued notes on the beat.** This was a simulator bug: it put the tongue gap at the start of each note, so every tongued note sounded 30 ms late. The gap now shortens the previous note, as a real tongue stop does.
-- [x] **Tongued repeats in a live room.** A re-articulation is now a fast dip below the recent level followed by a 6 dB recovery. Before, any dip below 45% of the note's loudest point counted, so the slow swells of a room's echo split held notes. Repeats now score 100% for typical and beginner players.
-- [x] **Slides.** A slide's glide registered as an extra in-between note. The detector now folds a continuously rising glide into the note it lands on, marks that note `slide`, and starts it where the slide began. The glide must last at least 45 ms, so ordinary note changes aren't mistaken for slides.
-- [x] **Short cuts and taps.** At about 30 ms they leave only one or two clean frames in the 23 ms analysis window, but a new pitch needed three frames. Two clearly pitched, steady frames now count as an ornament.
-- [x] **Overblown attacks.** The filter accepted anything within a semitone of an octave or a twelfth, which threw away real cuts. It now requires an exact match.
-- [x] **Glides and finger-crossing blips.** A short piece between two notes and within a semitone of both (or off the D scale) is filtered as a transient. So is a flat-starting attack or a release that sags flat. Cuts sit above the note and taps sit between two copies of the same note, so neither matches.
-- [ ] **Echo-heavy rooms.** When the echo is within about 5 dB of the direct sound, the previous note's echo and the new note blur inside one analysis window. The pitch reads off by a semitone, or the frame isn't clear enough to count. A fix needs a different approach, such as subtracting the previous note's harmonics after each onset, or a shorter second-pass window around onsets to get ornament pitches. A close mic is the practical answer for now.
-- [x] **Latency calibration.** The Calibrate page measures the delay from the game's click to the detector hearing you, either automatically (beeps through the speakers, heard back through the mic) or by playing along with headphones. The game uses it in place of the browser's own latency estimates.
-- [x] **Adaptive noise gate.** Three seconds of quiet set the gate 8 dB above the room's noise (ignoring a stray cough), and it's lowered if it would sit too close to your whistle's level.
-- [x] **Mic check.** The Calibrate page names the microphone the browser opened, records five seconds to play back, draws the waveform, and flags a silent mic, hiss even in the quiet moments (usually an input turned up too far), a take that's too quiet, or clipping.
-- [x] **Whistle tuning calibration.** A held note (low D recommended; any works) sets the reference pitch, so a sharp or flat whistle isn't misread. Whistle Ear has a "Use my calibration" button too.
+**Calibration.** Mic check (names the microphone, records five seconds to play back, flags silence, hiss, a quiet take or clipping); adaptive noise gate; per-instrument tuning; latency measured by beeps through the speakers or by playing along on headphones.
 
-## Phase 2: Tunes (paste your own ABC)
+**Tunes.** Paste or open ABC (whole files, file-header fields, credits and alternative titles); settings grouped by name; half-hole and range check with an easiest-transposition suggestion; charts with repeats and endings played out, parts and passes, pickups, a beat grid, and timed cuts, taps and rolls. The Tune Library has search, favorites, editing, a chart preview with a playhead you can scroll away from, the simulator, and backup to a file.
 
-Tunes come in as ABC the player pastes or opens. The project doesn't download from tune sites: The Session's data license forbids processing it with AI tools, and AI tools are used to build this project. So nothing from The Session is fetched, bundled or used in tests. Players can still paste ABC from anywhere they're allowed to use it.
+**Game.** Engine with perfect / good / OK windows (45 / 90 / 140 ms), misses, wrong notes, combo and multiplier, scored ornaments and timing offset. Live input from the mic or the simulator, latency-compensated. Two views: the **finger-hole runway** (three.js; notes spaced by the beat, optional halos, flicks for cuts and taps) and the **sheet music view** (abcjs; one staff of played-out ABC, a ghost notehead, an optional fingering strip). Note spacing for each view; a few seconds of run-up; a one-bar count-in on the tune's own beat (pickups fall in place); a metronome (every beat or once a bar); speed 10–200%; practice loops with optional speed-up and live tempo changes; pause; results with stars and personal bests.
 
-- [x] Paste one tune or a whole `.abc` file; every tune with an `X:` line is added, and file-header fields apply to all of them
-- [x] Keep the tune's own credits: titles and alternative names, composer (`C:`), transcriber (`Z:`), source (`S:`), origin, notes, rhythm
-- [x] Group tunes with the same name as settings, and choose between them
-- [x] Flag notes that need half-holing on a D whistle (C♮ counts as playable), notes outside the range, and hard third-octave notes, with the bar where each first appears
-- [x] Suggest the easiest transposition (−6 to +6 semitones) and play a tune in that key
-- [x] Build game charts from the parsed ABC (`src/chart/chart.js`): repeats and endings played out, parts and passes labelled, bars and a beat grid (pickups included), and cuts, taps and rolls as timed, scorable events
-- [x] Tune Library page: search, favorites, edit, delete, chart preview, play with the simulator, send to Whistle Ear, back up and restore as a file
+**Instruments (playing alone).** C, B♭, A, G, F, E♭ and high G whistles, and the low D whistle or Irish flute: tunes are fingered as written and sound in the instrument's key, with the sounding pitch shown. The accuracy check covers the B♭ whistle and the flute.
 
-## Phase 3: Core gameplay
+## Next
 
-Whistle only for now (fiddle support would mean widening the detector's range; see "Later"). One engine, several views: the engine judges notes, and each view draws the same chart and the same judgments its own way.
+### 1. Navigation
 
-- [x] Switch to Vite (`npm run dev`, `npm run build`) and add three.js
-- [x] Game engine (`src/game/engine.js`): perfect / good / OK windows (45 / 90 / 140 ms), misses, wrong notes (shown, but they don't break the combo), combo and ×4 multiplier, points for written cuts and taps, cuts and slides allowed for in note timing, and the player's average timing offset
-- [x] Live input (`src/audio/live.js`): the detector runs in real time on the microphone or on the simulator's audio, reporting notes in the game's clock. Mic and speaker delays are compensated, with a manual timing adjustment until calibration lands.
-- [x] **Finger-hole view** (`src/game/views/finger-view.js`): rows of six holes down a highway, gold for the second octave, halos on fingers that move, flicks for cuts and taps, note names, part labels, and a hit line that lights up with the fingering being heard. Notes are spaced by the beat (the same distance per quarter note at any tempo), so fast tunes scroll faster instead of bunching up. It fits phone screens too.
-- [x] Game page (`play.html`): pick a tune, speed 10–200%, play yourself or watch a simulated player, a one-bar count-in on the tune's own beat (the bar before the first downbeat, so a pickup comes in where it belongs, and the metronome carries straight on from it), a heads-up display, pause (Esc or Space), and results with stars and personal bests
-- [x] Practice looping: repeat the tune until ended, optionally 5 bpm faster every third pass; − / + (or `[` / `]`) change the tempo from the next pass; results report full passes and top tempo
-- [x] Halos on moving fingers, off by default (setup, pause menu, or `H`)
-- [x] **Sheet music view** (`src/game/views/sheet-view.js`): one staff scrolling past a playhead, drawn with abcjs from ABC the game writes out (`src/abc/write.js`: repeats played out, transposition applied, ties over bar lines, triplets, ornaments), so every note on the staff is a note in the chart. A "ghost" notehead shows the note being played at its place on the staff, green or red, with ledger lines, accidental and name. Judged notes turn gold, green or red, an optional strip of whistle fingerings runs underneath (`H`), and loop passes carry straight on without a new clef.
-- [x] Mode switch on the setup screen; each view loads only when it's chosen
-- [x] Metronome during play: every beat or once a bar, bar starts accented, on the chart's beat grid (so it follows loop tempo changes), with a click volume; `M` cycles it. Clicks are unpitched noise bursts: mixed into Whistle Sim renders as loud as the whistle, they cost no notes and at most one ornament in twenty.
-- [ ] Guide track for headphone users (the tune played quietly along with you)
-- [x] Deploy to GitHub Pages so it runs over HTTPS anywhere (the test workflow builds and deploys `main` once the tests pass)
+- [x] A navigation bar on every page: Home, Play, Tunes, Calibrate, Whistle Ear, Whistle Sim (`src/nav.js`); in the game it shows on the setup, pause and results screens and hides while you play
 
-## Later
+### 2. Tunes for testing
 
-- [ ] Fiddle support: widen the detector's range down to G3, test with real fiddle recordings, and use the sheet music view (the finger-hole view is whistle-specific)
+- [ ] A public-domain starter set that ships with the site: one or two tunes for each rhythm (reel, jig, hornpipe, polka, slide, slip jig, waltz, strathspey, mazurka, barndance), set from old printed collections such as O'Neill's (1903), avoiding tunes with a known modern composer. Loaded into the library on first visit, alongside the player's own.
+- [ ] A short guide to bringing in your own tunebook (download it from The Session as `.abc`, then open it in the Tune Library)
 
-## Phase 4: Learning
+### 3. Backing band: engine and bodhrán
 
-- [ ] Wait mode: the highway pauses until you play the right note
-- [ ] Loop a part (A part or B part) or a few bars
+- [ ] One band scheduler on the beat grid that everything plays through: metronome, bodhrán, later guitar, and a melody voice (the old "guide track" idea: the tune played quietly along with you, mainly for headphone users)
+- [ ] Synthesized bodhrán with reel and jig patterns to start
+- [ ] Mixer: a level for each part, remembered between visits
+- [ ] Check that the bodhrán leaking into the mic doesn't cost notes (as was done for the metronome)
+
+### 4. Grooves for every rhythm
+
+- [ ] Grooves for reels, jigs, hornpipes (swung, dotted), polkas, slides, slip jigs, waltzes, strathspeys (Scotch snaps), mazurkas and barndances, each with its own swing, accents and human feel
+- [ ] Choose the groove from the tune's `R:` field and meter, with an override in setup
+- [ ] Tune by ear with real playing
+
+### 5. Guitar
+
+- [ ] Chord bank per key, in DADGAD-style voicings
+- [ ] Chords from ABC chord symbols where a tune has them
+- [ ] Per-bar chord editor in the Tune Library
+- [ ] Strum patterns for each groove, and a plucked-string synth
+- [ ] Keep the guitar from being heard as the player: headphones work today; with speakers, the detector may need to ignore notes the band just played
+- [ ] Later: generated harmony parts
+
+### 6. The pub
+
+- [ ] Asset pipeline: Blender → glTF (`.glb`), with export settings, scale, naming and animation conventions written down
+- [ ] Scene described by a manifest (which models, where, which animations), so it grows without code changes
+- [ ] Blockout scene with placeholder shapes, so code and art can progress side by side
+- [ ] Low-poly musicians animated in time with the band, pints, and a crowd that reacts to your playing
+- [ ] Performance budget for phones: baked lighting, texture atlases
+
+### 7. Practice tools
+
+- [ ] Wait mode: the music waits until you play the right note
+- [ ] Loop a part (A or B) or a few bars
 - [ ] Fingering preview for upcoming notes
 - [ ] Per-tune progress and accuracy history
 - [ ] An in-game tuning meter
 
-## Phase 5: Polish and reach
+### 8. Instruments and audio
 
-- [ ] Difficulty levels: plain melody with ornaments stripped, up to expert where ornaments are required
-- [ ] Hit effects, visual themes and a low-power mode
+- [ ] Other instruments, matching others: transpose the fingerings so the instrument sounds at the written pitch, with the half-hole check run for that instrument
+- [ ] Test the flute with real recordings (the simulator sounds like a whistle at every pitch)
+- [ ] Whistle Ear's "Use my calibration" applies the chosen instrument's tuning (it only knows the D whistle)
+- [ ] Microphone picker on the setup and Calibrate screens
+- [ ] Echo-heavy rooms: when the echo is within about 5 dB of the direct sound, the previous note's echo and the new note blur in one analysis window. Possible fixes: subtract the previous note's harmonics after each onset, or a shorter second-pass window around onsets. A close mic works around it for now.
+
+### 9. Reach and polish
+
 - [ ] Phones and tablets (mic latency, iOS Safari audio quirks)
 - [ ] Installable offline app (PWA)
-- [x] Other instruments, playing alone: whistles in C, B♭, A, G, F, E♭ and high G, and the low D whistle or Irish flute. Tunes are fingered as written and sound in the instrument's key; the detector listens with its reference pitch moved to the instrument (and its pitch search follows, down an octave for the flute). Tuning is calibrated per instrument, the simulated player sounds like the chosen instrument, and the game shows the pitch a fingering really sounds. The accuracy check covers the B♭ whistle and the flute.
-- [ ] Other instruments, matching others: transpose the fingerings so the instrument sounds at the written pitch, with the half-hole check run for that instrument
-- [ ] Test the flute with real recordings (the simulator still sounds like a whistle at every pitch)
 - [ ] Colorblind-safe lanes and reduced motion
+- [ ] Difficulty levels: plain melody with ornaments stripped, up to expert where ornaments are required
+- [ ] Hit effects and a low-power mode
+- [ ] Fiddle support: widen the detector's range down to G3, test with real fiddle recordings, and use the sheet music view
 
-## Simulator improvements, as needed
+### 10. Simulator
 
 - [ ] Real-time mode that feeds Whistle Sim into the live microphone path, to test the AudioWorklet path and latency without speakers
-- [ ] Render straight from game charts, so every tune in the library gets an automatic playthrough test
-- [ ] Record a small set of real whistle clips with hand-labeled notes, to check that the synth's mistakes look like real ones
+- [ ] Render straight from game charts, so every tune gets an automatic playthrough test
+- [ ] A small set of real whistle clips with hand-labeled notes, to check that the synth's mistakes look like real ones

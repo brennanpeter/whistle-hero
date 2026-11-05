@@ -73,6 +73,7 @@ src/game/engine.js      judging and scoring (no DOM, tested in Node)
 src/game/views/         ways of drawing the game: finger-view.js (three.js), sheet-view.js (abcjs)
 src/audio/live.js       real-time detection from the mic or the simulator
 src/library.js          the tune library in browser storage
+src/nav.js              the navigation bar at the top of every page
 src/calibration.js      calibration maths (gate, tuning, latency) and storage
 src/sim/whistle-synth.js
                         synthetic whistle and player model
