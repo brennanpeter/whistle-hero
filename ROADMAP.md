@@ -46,17 +46,20 @@ What's done, and the plan for what comes next, grouped by theme in rough order. 
 
 ### 4. Grooves for every rhythm
 
-- [ ] Grooves for reels, jigs, hornpipes (swung, dotted), polkas, slides, slip jigs, waltzes, strathspeys (Scotch snaps), mazurkas and barndances, each with its own swing, accents and human feel
-- [ ] Choose the groove from the tune's `R:` field and meter, with an override in setup
-- [ ] Tune by ear with real playing
+- [x] Grooves for reels, jigs (accented 1 and 4, light double up-strokes), hornpipes (swung, three-beat phrase endings), polkas, slides (long-short), slip jigs, waltzes (oom-pah-pah), strathspeys (dotted rhythms and Scotch snaps), mazurkas (the push on beat 2) and barndances (swung), each with its own accents, variations and fills. A reel in 2/2 or a hornpipe in 2/4 gets its groove with pairs of beats joined.
+- [x] The groove comes from the tune's `R:` field, or its time signature when there isn't one, and can be chosen per tune in setup
+- [x] Hornpipes and barndances written in even eighths are swung everywhere: the chart and its scoring, both views, the simulated player and the guide, not just the drum. Triplets stay even; tunes written dotted keep their written rhythm.
+- [ ] Tune the grooves by ear with real playing
 
-### 5. Guitar
+### 5. Guitar (on hold: groundwork in place, not yet in the game)
 
-- [ ] Chord bank per key, in DADGAD-style voicings
-- [ ] Chords from ABC chord symbols where a tune has them
+- [x] Chord symbols in ABC are kept (`"G"`, `"Em7"`, `"A/C#"`), transposed with the tune (`src/music/chords.js`)
+- [x] Keys and modes, and each key's chords
+- [x] Automatic chords for tunes without any: one per half bar from the key's chords, fitted to the melody, leaning on the home, fourth and fifth chords, home at both ends
+- [x] A plucked-string guitar (`src/audio/guitar.js`) in the open-tuning style: bass notes carry the chord's root, the top strings ring the key's drones (dropping the third where a drone rubs against it, as in DADGAD), brushed on the rhythm; strum patterns for every groove
+- [ ] Make it sound right. The first version was harsh; the second, modelled on a reference clip (bass-led, 96% of its energy between 100 and 400 Hz, soft 60 ms attacks, long rings, a long-short jig pattern, bass walking under G and D drones), still sounded off. Next: compare the two closely by ear and by measurement, and consider recorded string samples instead of synthesis.
 - [ ] Per-bar chord editor in the Tune Library
-- [ ] Strum patterns for each groove, and a plucked-string synth
-- [ ] Keep the guitar from being heard as the player: headphones work today; with speakers, the detector may need to ignore notes the band just played
+- [ ] Keep the guitar from being heard as the player. A plucked string's overtones land squarely in the whistle's range: at the whistle's level, the harsh guitar cut caught notes to about a third, the darker one to about 60%. Cutting the guitar off above 330 Hz (a quarter below the detector's low cut) makes it harmless (94–99% of notes at the whistle's level); with headphones it can play in full.
 - [ ] Later: generated harmony parts
 
 ### 6. The pub

@@ -12,6 +12,7 @@
 
 import { LOW_D, FINGERINGS, noteName, stepFrom, cutFor } from "../whistle.js";
 import { parseAbc } from "../abc/abc.js";
+import { swingFor, swingPos } from "../chart/chart.js";
 
 export { LOW_D, FINGERINGS, noteName, parseAbc }; // re-exported so pages can import everything from here
 const TAU = Math.PI * 2;
@@ -112,10 +113,11 @@ export function perform(parsed, opts) {
   const secPerWhole = 240 / qpm;
   const evs = parsed.events.filter(e => e.len > 0);
 
-  // Onsets with human timing; each event spans to the next onset.
-  const onsets = []; let t = LEAD_IN;
-  for (const e of evs) { onsets.push(t); t += e.len * secPerWhole; }
-  const endT = t;
+  // Onsets with human timing; each event spans to the next onset. A hornpipe written in even
+  // eighths is played swung, as the game's chart expects (see swingFor in chart.js).
+  const sw = swingFor(parsed), at = pos => LEAD_IN + swingPos(pos, sw) * secPerWhole;
+  const onsets = evs.map(e => at(e.pos));
+  const endT = evs.length ? at(evs[evs.length - 1].pos + evs[evs.length - 1].len) : LEAD_IN;
   for (let k = 1; k < onsets.length; k++) {
     const room = 0.3 * Math.min(onsets[k] - onsets[k - 1], (k + 1 < onsets.length ? onsets[k + 1] : endT) - onsets[k]);
     onsets[k] += Math.max(-room, Math.min(room, R.gauss() * o.timingMs / 1000));
@@ -344,6 +346,7 @@ export function renderPerformance(perf) {
 /** One call: ABC text in, audio + ground truth out. */
 export function renderAbc(abc, opts = {}) {
   const parsed = parseAbc(abc, { transpose: opts.transpose || 0 });
+  if (opts.rhythm) parsed.meta = { ...parsed.meta, rhythm: opts.rhythm }; // a rhythm chosen in place of the R: field (it sets the swing)
   const perf = perform(parsed, opts);
   const { samples, sr, peak } = renderPerformance(perf);
   const truth = {

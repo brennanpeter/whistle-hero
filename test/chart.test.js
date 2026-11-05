@@ -78,3 +78,18 @@ test("playability: suggests the easiest transposition", () => {
   assert.equal(describeTranspose(-3), "down 3 semitones");
   assert.equal(describeTranspose(2), "up a tone");
 });
+
+test("hornpipes written in even eighths are swung; dotted ones and triplets are left as written", async () => {
+  const { swingFor, swingPos } = await import("../src/chart/chart.js");
+  const hp = parseAbc("X:1\nR:hornpipe\nM:4/4\nL:1/8\nK:D\n(3ABc|dAFA DFAd|fdfa gfed|");
+  const sw = swingFor(hp);
+  assert.deepEqual(sw, { pair: 0.25, ratio: 0.66 });
+  const ch = buildChart(hp, { bpm: 100 }); // an eighth is 0.3 s
+  const t = ch.notes.map(n => +n.t.toFixed(3));
+  assert.deepEqual(t.slice(0, 3), [0, 0.2, 0.4], "the triplet stays even");
+  assert.deepEqual(t.slice(3, 7), [0.6, 0.996, 1.2, 1.596], "off-beat eighths land late");
+  assert.ok(Math.abs(ch.notes[3].dur - 0.396) < 1e-9 && Math.abs(ch.notes[4].dur - 0.204) < 1e-9, "long-short");
+  assert.equal(swingPos(0.375, sw), 0.375 - 0.125 + 0.66 * 0.25);
+  assert.equal(swingFor(parseAbc("X:1\nR:hornpipe\nM:4/4\nL:1/8\nK:D\nA>B c>d e>f g>a|")), null, "written dotted");
+  assert.equal(swingFor(parseAbc("X:1\nR:reel\nM:4/4\nL:1/8\nK:D\nABcd efga|")), null, "reels are even");
+});

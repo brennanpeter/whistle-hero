@@ -15,11 +15,11 @@ test("grooves come from the rhythm field, or the time signature when there isn't
   assert.equal(grooveFor(tune("jig", "6/8", "ABc def|")).id, "jig");
   assert.equal(grooveFor(tune("double jig", "6/8", "ABc def|")).id, "jig");
   assert.equal(grooveFor(tune("", "6/8", "ABc def|")).id, "jig", "6/8 with no rhythm given");
-  assert.equal(grooveFor(tune("slip jig", "9/8", "ABc def gab|")).id, "plain");
-  assert.equal(grooveFor(tune("waltz", "3/4", "A2 B2 c2|")).id, "plain");
+  assert.equal(grooveFor(tune("slip jig", "9/8", "ABc def gab|")).id, "slip jig");
+  assert.equal(grooveFor(tune("waltz", "3/4", "A2 B2 c2|")).id, "waltz");
   assert.equal(grooveFor(tune("jig", "4/4", "ABcd efga|")).id, "plain", "a 'jig' in 4/4 isn't one we can play as a jig");
-  const slip = grooveFor(tune("slip jig", "9/8", "ABc def gab|"));
-  assert.deepEqual(slip.normal, ["Dud", "dud", "dud"]);
+  assert.equal(grooveFor(tune("", "9/8", "ABc def gab|")).id, "slip jig");
+  assert.equal(grooveFor(tune("strathspey", "6/8", "ABc def|")).id, "plain", "a groove has to suit the time signature");
 });
 
 test("a beat's strokes are spread evenly across it, and the bar's first stroke is accented", () => {
@@ -85,4 +85,49 @@ test("bodhrán strokes: clean, decaying, and pitched by kind", () => {
   const y = renderDrums([{ t: 0.5, kind: "D", vel: 1 }], sr, sr);
   let first = -1; for (let i = 0; i < y.length; i++) if (Math.abs(y[i]) > 0.01) { first = i; break; }
   assert.ok(Math.abs(first / sr - 0.5) < 0.002);
+});
+
+
+test("every groove: one pattern per beat of its own time signature, made of known strokes", async () => {
+  const { meterInfo } = await import("../src/chart/chart.js");
+  for (const [id, g] of Object.entries(GROOVES)) {
+    const n = meterInfo(g.meter).beatsPerBar;
+    for (const which of ["normal", "variation", "fill"]) {
+      assert.equal(g[which].length, n, `${id} ${which}`);
+      assert.ok(g[which].every(p => /^[Ddut-]+$/.test(p)), `${id} ${which}: ${g[which]}`);
+    }
+  }
+});
+
+test("rhythms map to their grooves, with or without the R: field", () => {
+  const cases = [["hornpipe", "4/4", "hornpipe"], ["polka", "2/4", "polka"], ["slide", "12/8", "slide"], ["waltz", "3/4", "waltz"],
+    ["strathspey", "4/4", "strathspey"], ["mazurka", "3/4", "mazurka"], ["barndance", "4/4", "barndance"], ["barn dance", "4/4", "barndance"],
+    ["schottische", "4/4", "barndance"], ["", "12/8", "slide"], ["", "2/4", "polka"], ["", "3/4", "waltz"]];
+  for (const [r, m, id] of cases) assert.equal(grooveFor(tune(r, m, "A8|")).id, id, `${r || "(none)"} in ${m}`);
+});
+
+test("a reel in 2/2 or a hornpipe in 2/4 gets its groove with pairs of beats joined", () => {
+  const reel = grooveFor(tune("reel", "C|", "A8|"));
+  assert.equal(reel.id, "reel"); assert.deepEqual(reel.normal, ["Dudu", "Dudu"]);
+  const hp = grooveFor(tune("hornpipe", "2/4", "A4|"));
+  assert.equal(hp.id, "hornpipe"); assert.deepEqual(hp.fill, ["DD", "D-"]);
+});
+
+test("swing puts the second of each pair late; a strathspey's snaps land on the sixteenths", () => {
+  const hp = beatStrokes(GROOVES.hornpipe, { t: 0, dur: 0.6, beatInBar: 1, bar: 0, rnd: still, loose: 0 });
+  assert.deepEqual(hp.map(s => +s.t.toFixed(4)), [0, 0.396]);
+  const joined = grooveFor(tune("hornpipe", "C|", "A8|"));
+  const two = beatStrokes(joined, { t: 0, dur: 1, beatInBar: 0, bar: 0, rnd: still, loose: 0 });
+  assert.deepEqual(two.map(s => +s.t.toFixed(3)), [0, 0.33, 0.5, 0.83], "swung in pairs within a joined beat");
+  const strath = [0, 1].flatMap(b => beatStrokes(GROOVES.strathspey, { t: b, dur: 1, beatInBar: b, bar: 0, rnd: still, loose: 0 }));
+  assert.deepEqual(strath.map(s => s.t), [0, 0.75, 1, 1.25], "long-short, then the snap: short-long");
+});
+
+test("every starter tune gets its own rhythm's groove", async () => {
+  const { STARTER_ABC } = await import("../src/tunes/starter.js");
+  const { parseAbcFile } = await import("../src/abc/abc.js");
+  for (const t of parseAbcFile(STARTER_ABC)) {
+    const p = parseAbc(t.abc);
+    assert.equal(grooveFor(p).id, p.meta.rhythm, t.title);
+  }
 });

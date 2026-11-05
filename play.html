@@ -72,6 +72,7 @@ input[type=number]{font:14px var(--f-mono);color:var(--ink);background:var(--bg)
 .field>label,.field>.lab{font-weight:500;display:flex;justify-content:space-between;gap:8px}
 .field>label.check{justify-content:flex-start;font-weight:400}
 .field .hint.warn{color:var(--brass)}
+.field label.inline{display:flex;align-items:center;gap:8px;font-weight:400;font-size:14px;color:var(--muted)}
 .field output{font:13px var(--f-mono);color:var(--brass)}
 .field .hint{font-size:13px;color:var(--muted)}
 .seg{display:flex;gap:6px;flex-wrap:wrap}
@@ -163,6 +164,7 @@ a{color:var(--brass)}
         <button type="button" data-bodhran="off" aria-pressed="false">Off</button>
         <button type="button" data-bodhran="on" aria-pressed="true">On</button>
       </div>
+      <label class="inline" for="groove">Groove <select id="groove"></select></label>
       <span class="hint" id="grooveHint"></span>
     </div>
     <div class="field">
@@ -283,10 +285,10 @@ addEventListener("error", e => {
 <script type="module">
 window.__gameLoaded = false;
 import { parseAbc } from "./src/abc/abc.js";
-import { buildChart, shiftChart } from "./src/chart/chart.js";
+import { buildChart, swingFor, shiftChart } from "./src/chart/chart.js";
 import { createGame } from "./src/game/engine.js";
 import { createListener } from "./src/audio/live.js";
-import { grooveFor, beatStrokes } from "./src/audio/grooves.js";
+import { grooveFor, beatStrokes, GROOVES } from "./src/audio/grooves.js";
 import { annotateBeats, createBodhran } from "./src/audio/band.js";
 import { DEFAULT_SETTINGS } from "./src/audio/detector.js";
 import { renderAbc, PRESETS, PROFILES } from "./src/sim/whistle-synth.js";
@@ -295,6 +297,8 @@ import { loadLibrary, saveLibrary, starterTunes, groupTunes } from "./src/librar
 import { loadCalibration, calibratedSettings, tuningFor } from "./src/calibration.js";
 import { INSTRUMENTS, instrument, loadInstrument, saveInstrument, referencePitch, shiftOf, soundingName } from "./src/instruments.js";
 const $ = s => document.querySelector(s);
+// a tune from the library, parsed, with its chosen groove standing in for its rhythm
+const parseTune = (t, opts) => { const p = parseAbc(t.abc, opts); if (t.rhythm) p.meta = { ...p.meta, rhythm: t.rhythm }; return p; };
 let S = null; // the game in progress: { ctx, game, view, ear, t0, comp, raf, tune, chart, … }
 
 /* ---------- preferences ---------- */
@@ -378,7 +382,7 @@ $("#speed").value = prefs.speed;
 const showSpeed = () => {
   const t = lib.tunes.find(x => x.id === prefs.tune);
   let bpm = "";
-  try { if (t) bpm = ` · ${Math.round(buildChart(parseAbc(t.abc), { bpm: t.bpm }).qpm * prefs.speed / 100)} bpm`; } catch (e) {}
+  try { if (t) bpm = ` · ${Math.round(buildChart(parseTune(t), { bpm: t.bpm }).qpm * prefs.speed / 100)} bpm`; } catch (e) {}
   $("#speedOut").textContent = prefs.speed + "%" + bpm;
 };
 showSpeed();
@@ -435,11 +439,22 @@ showBodhran();
 // which groove the selected tune gets
 function showGroove() {
   const t = lib.tunes.find(x => x.id === prefs.tune);
-  let g = null; try { g = t && grooveFor(parseAbc(t.abc)); } catch (e) {}
+  $("#groove").value = (t && t.rhythm) || "";
+  let g = null, swung = false;
+  try { if (t) { const p = parseTune(t); g = grooveFor(p); swung = !!swingFor(p); } } catch (e) {}
   $("#grooveHint").textContent = !g ? "" : g.id === "plain"
-    ? "A plain beat for this tune (patterns for more rhythms are coming)."
-    : `${g.label} groove.`;
+    ? (t && t.rhythm ? `That groove doesn't fit this tune's time signature, so it gets a plain beat.` : "A plain beat: this tune's rhythm or time signature has no groove of its own yet.")
+    : `${g.label} groove${swung ? ", swung: the off-beat eighths are long-short, as players play them" : ""}.`;
 }
+// The groove can be chosen per tune (saved with it in the library). It stands in for the tune's
+// rhythm (its R: field) everywhere: the drum's pattern, and the swing of a hornpipe or barndance.
+$("#groove").append(new Option("Automatic (from the tune)", ""));
+for (const [id, g] of Object.entries(GROOVES)) $("#groove").append(new Option(g.label, id));
+$("#groove").addEventListener("change", e => {
+  const t = lib.tunes.find(x => x.id === prefs.tune); if (!t) return;
+  if (e.target.value) t.rhythm = e.target.value; else delete t.rhythm;
+  saveLibrary(lib); showGroove(); showSpeed();
+});
 showGroove();
 
 /* ---------- the backing band: guide melody ---------- */
@@ -521,7 +536,7 @@ async function start() {
   msg("Getting ready…");
   let createView;
   try { createView = await VIEWS[prefs.mode](); } catch (e) { msg(viewFailed(e)); return; }
-  const parsed = parseAbc(tune.abc, { transpose: tune.transpose || 0 });
+  const parsed = parseTune(tune, { transpose: tune.transpose || 0 });
   const base = buildChart(parsed, { bpm: tune.bpm });
   const bpm0 = Math.round(base.qpm * prefs.speed / 100);
   const chart = shiftChart(buildChart(parsed, { bpm: bpm0 }), 0, { loop: 1 });
@@ -667,11 +682,11 @@ function appendPass() {
 }
 // the simulated player plays each pass from its own rendering, lined up on the game clock
 const renderSim = (tune, bpm) => renderAbc(tune.abc,
-  { profile: prefs.profile, articulation: prefs.simArtic, bpm, transpose: tune.transpose || 0, shift: shiftOf(inst), seed: 1 + Math.floor(Math.random() * 9999) });
+  { profile: prefs.profile, articulation: prefs.simArtic, bpm, transpose: tune.transpose || 0, shift: shiftOf(inst), rhythm: tune.rhythm, seed: 1 + Math.floor(Math.random() * 9999) });
 function scheduleSim(p) { startSim(p, renderSim(S.tune, p.bpm)); }
 // the guide: the same synth, played cleanly with the written ornaments
 const renderGuide = (tune, bpm) => renderAbc(tune.abc,
-  { profile: "clean", articulation: "abc", bpm, transpose: tune.transpose || 0, shift: shiftOf(inst), seed: 7 });
+  { profile: "clean", articulation: "abc", bpm, transpose: tune.transpose || 0, shift: shiftOf(inst), rhythm: tune.rhythm, seed: 7 });
 function startGuide(p, r = null) {
   if (!S || prefs.guide !== "on" || S.guides.some(g => g.p === p) || S.t0 + p.end <= S.ctx.currentTime) return;
   const src = playPass(p, r || renderGuide(S.tune, p.bpm), S.guideOut);

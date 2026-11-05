@@ -19,6 +19,39 @@ export const DEFAULT_QPM = {
   waltz: 150, mazurka: 150, barndance: 160, strathspey: 120, march: 110, "three-two": 150,
 };
 
+/**
+ * Swing: hornpipes and barndances are usually written in even eighths but played long-short. This
+ * is where the second of each pair of eighths falls (0.5 would be even). The backing drum uses the
+ * same amounts.
+ */
+export const SWING = { hornpipe: 0.66, barndance: 0.64 };
+
+/**
+ * How a tune is swung, or null: { pair, ratio }, `pair` being the length of a pair of notes in whole
+ * notes. Only a hornpipe or barndance in simple time, written in even notes; one written dotted
+ * (A>B) already has its swing on the page.
+ */
+export function swingFor(parsed) {
+  const ratio = SWING[(parsed.meta?.rhythm || "").toLowerCase().trim().replace(/^barn dance/, "barndance")];
+  if (!ratio) return null;
+  const mi = meterInfo(parsed.meter);
+  if (mi.beatLen > mi.barLen / mi.num + 1e-9) return null; // compound time
+  // written swung: dotted pairs put notes a quarter or three quarters of the way through a pair
+  const pair = 2 * (parsed.unit || 1 / 8), evs = parsed.events.filter(e => e.len > 0);
+  const dotted = evs.filter(e => { const f = (e.pos / pair) % 1; return Math.abs(f - 0.25) < 1e-6 || Math.abs(f - 0.75) < 1e-6; }).length;
+  return evs.length && dotted / evs.length < 0.1 ? { pair, ratio } : null;
+}
+
+/**
+ * A position (in whole notes) moved by swing: a note halfway through a pair starts late. Triplets
+ * and other divisions stay where they're written, as players keep them even inside a swung tune.
+ */
+export function swingPos(pos, sw) {
+  if (!sw) return pos;
+  const q = Math.floor(pos / sw.pair + 1e-9), f = pos / sw.pair - q;
+  return Math.abs(f - 0.5) < 1e-6 ? (q + sw.ratio) * sw.pair : pos;
+}
+
 /** Beats per bar and the length of one beat (in whole notes) for a meter string. */
 export const SLIDE_LAND = 0.08; // seconds from the start of a slide to landing on its note
 
@@ -37,11 +70,12 @@ export function buildChart(parsed, { bpm = null, graceMs = 35 } = {}) {
   const mi = meterInfo(parsed.meter);
   const g = graceMs / 1000;
 
+  const sw = swingFor(parsed); // a hornpipe written in even eighths is played swung
   const notes = [], ornaments = [];
   let prevMidi = null, prevRest = true;
   for (const e of parsed.events) {
     if (e.t !== "note") { prevRest = true; continue; }
-    const t = e.pos * spw, dur = e.len * spw;
+    const t = swingPos(e.pos, sw) * spw, dur = (swingPos(e.pos + e.len, sw) - swingPos(e.pos, sw)) * spw;
     const gd = Math.min(g, dur * 0.22);
     const expect = t + e.graces.length * gd + (e.slide ? SLIDE_LAND : 0);
     const n = {
@@ -85,7 +119,7 @@ export function buildChart(parsed, { bpm = null, graceMs = 35 } = {}) {
   return {
     title: parsed.title, meta: parsed.meta || {}, key: parsed.key, meter: parsed.meter, rhythm, qpm,
     beatsPerBar: mi.beatsPerBar, beatSeconds: mi.beatLen * spw, parts: parsed.parts,
-    duration: end, notes, ornaments, bars, beats,
+    duration: end, notes, ornaments, bars, beats, swing: sw,
   };
 }
 

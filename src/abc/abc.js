@@ -1,6 +1,7 @@
 // ABC notation parser for whistle tunes.
 // Shared by Whistle Sim, the Tune Library and the game's chart builder.
 import { LOW_D } from "../whistle.js";
+import { parseChordSymbol } from "../music/chords.js";
 
 // Information fields kept as tune metadata (ABC 2.1 letters).
 const META_FIELDS = { C: "composer", R: "rhythm", S: "source", Z: "transcriber", N: "notes", O: "origin", B: "book", H: "history", D: "discography", F: "fileUrl", P: "parts" };
@@ -101,6 +102,7 @@ export function parseAbc(text, opts = {}) {
   let tuplet = null; // {left, scale}
   let pendingDeco = { roll: false, slide: false };
   let pendingGraces = null;
+  let pendingChord = null;
   let pendingBroken = null; // multiplier for the next note
   let lastNote = null;
 
@@ -134,8 +136,9 @@ export function parseAbc(text, opts = {}) {
   const pushNote = (midi, len, isRest) => {
     len = applyTuplet(len * unit);
     if (pendingBroken) { len *= pendingBroken; pendingBroken = null; }
+    const chord = pendingChord; pendingChord = null;
     if (isRest) {
-      items.push({ t: "rest", len }); lastNote = items[items.length - 1];
+      items.push(chord ? { t: "rest", len, chord } : { t: "rest", len }); lastNote = items[items.length - 1];
       pendingDeco = { roll: false, slide: false }; pendingGraces = null;
       return;
     }
@@ -148,6 +151,7 @@ export function parseAbc(text, opts = {}) {
     const slurred = slurDepth > 0 && !slurFresh;
     slurFresh = false;
     const ev = { t: "note", midi, len, slurred, roll: pendingDeco.roll, slide: pendingDeco.slide, graces: pendingGraces || [] };
+    if (chord) ev.chord = chord;
     items.push(ev); lastNote = ev;
     pendingDeco = { roll: false, slide: false }; pendingGraces = null;
   };
@@ -156,7 +160,12 @@ export function parseAbc(text, opts = {}) {
   while (i < src.length) {
     const c = src[i];
     if (/\s|`/.test(c)) { i++; continue; }
-    if (c === '"') { const j = src.indexOf('"', i + 1); i = j < 0 ? src.length : j + 1; continue; }
+    if (c === '"') {
+      // a chord symbol ("G", "Em7", "A/C#") goes with the next note or rest; other text is an annotation
+      const j = src.indexOf('"', i + 1), ch = parseChordSymbol(src.slice(i + 1, j < 0 ? src.length : j), transpose);
+      if (ch) pendingChord = ch;
+      i = j < 0 ? src.length : j + 1; continue;
+    }
     if (c === "!" || c === "+") {
       const j = src.indexOf(c, i + 1); if (j < 0) { i++; continue; }
       const d = src.slice(i + 1, j).toLowerCase();
