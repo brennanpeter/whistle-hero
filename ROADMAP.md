@@ -19,7 +19,7 @@ What's done, and the plan for what comes next, grouped by theme in rough order. 
 
 **Tunes.** Paste or open ABC (whole files, file-header fields, credits and alternative titles); settings grouped by name; half-hole and range check with an easiest-transposition suggestion; charts with repeats and endings played out, parts and passes, pickups, a beat grid, and timed cuts, taps and rolls. The Tune Library has search, favorites, editing, a chart preview with a playhead you can scroll away from, the simulator, and backup to a file.
 
-**Game.** Engine with perfect / good / OK windows (45 / 90 / 140 ms), misses, wrong notes, combo and multiplier, scored ornaments and timing offset. Live input from the mic or the simulator, latency-compensated. Two views: the **finger-hole runway** (three.js; notes spaced by the beat, optional halos, flicks for cuts and taps) and the **sheet music view** (abcjs; one staff of played-out ABC, a ghost notehead, an optional fingering strip). Note spacing for each view; a few seconds of run-up; a one-bar count-in on the tune's own beat (pickups fall in place); a metronome (every beat or once a bar); speed 10–200%; practice loops with optional speed-up and live tempo changes; pause; results with stars and personal bests.
+**Game.** Engine with perfect / good / OK windows (45 / 90 / 140 ms), misses, wrong notes, combo and multiplier, scored ornaments and timing offset. Live input from the mic or the simulator, latency-compensated. Two views: the **finger-hole runway** (three.js; notes spaced by the beat, optional halos, flicks for cuts and taps) and the **sheet music view** (abcjs; one staff of played-out ABC, a ghost notehead, an optional fingering strip). Note spacing for each view; a few seconds of run-up; a one-bar count-in on the tune's own beat (pickups fall in place); a metronome (every beat or once a bar); speed 10–200%; practice loops with optional speed-up and tempo changes that take effect at once (the game clock speeds up or slows down; the band follows from the next beat, the simulator and guide are re-rendered in a background worker); pause; results with stars and personal bests.
 
 **Instruments (playing alone).** C, B♭, A, G, F, E♭ and high G whistles, and the low D whistle or Irish flute: tunes are fingered as written and sound in the instrument's key, with the sounding pitch shown. The accuracy check covers the B♭ whistle and the flute.
 
@@ -64,11 +64,13 @@ What's done, and the plan for what comes next, grouped by theme in rough order. 
 
 ### 6. The pub
 
-- [ ] Asset pipeline: Blender → glTF (`.glb`), with export settings, scale, naming and animation conventions written down
-- [ ] Scene described by a manifest (which models, where, which animations), so it grows without code changes
-- [ ] Blockout scene with placeholder shapes, so code and art can progress side by side
-- [ ] Low-poly musicians animated in time with the band, pints, and a crowd that reacts to your playing
-- [ ] Performance budget for phones: baked lighting, texture atlases
+- [x] Asset pipeline (`ASSETS.md`): Blender → `.glb` in `assets-src/`, `npm run assets` (glTF-Transform: dedup, prune, weld, meshopt) → `public/assets/`, committed so the Pages build needs no Blender. Units, axes, naming (`env_`, `prop_`, `char_`, `spot_`), baking lighting into the colour textures, export settings and animation clips written down; `.blend` files through Git LFS
+- [x] Scenes described by a manifest (`scene.json`: environment, scale, fog, tone mapping, lights, runway placement, actors at spots with clips), loaded by `src/stage/`; `npm test` checks every manifest against its models and the triangle budget
+- [x] A grey-box pub made from code (`npm run blockout`): room, bar, tables, a session corner, fireplace, "baked" lamplight in vertex colours, box musicians and punters with idle, play and cheer clips, pints. "Scene: The pub (blockout)" in setup puts the runway in it: musicians nod on the beat at any tempo, everyone cheers every 25-note combo
+- [ ] Model and bake the real pub in Blender, then swap it in for the blockout
+- [ ] Low-poly musicians and punters, rigged, with play clips one second a beat
+- [ ] An environment map rendered from inside the pub, for the lit characters and props
+- [ ] KTX2 textures once there are real ones; check the budget on a phone (under 100k triangles, under 100 draw calls)
 
 ### 7. Practice tools
 
@@ -93,6 +95,8 @@ What's done, and the plan for what comes next, grouped by theme in rough order. 
 - [ ] Colorblind-safe lanes and reduced motion
 - [ ] Difficulty levels: plain melody with ornaments stripped, up to expert where ornaments are required
 - [ ] Hit effects and a low-power mode
+- [x] No freeze before each loop pass ends: the next pass's guide and simulator audio used to be rendered on the main thread as it was laid out (2–3 s on a computer, longer on a phone); it's now rendered a pass ahead in a background worker
+- [ ] Faster catch-up after a tempo change: the guide and simulated player keep the old tempo until a whole pass is re-rendered (seconds on a phone). Render the next few seconds first, then the rest
 - [ ] Fiddle support: widen the detector's range down to G3, test with real fiddle recordings, and use the sheet music view
 
 ### 10. Simulator

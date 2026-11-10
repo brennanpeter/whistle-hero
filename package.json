@@ -11,7 +11,9 @@
     "serve": "node tools/serve.mjs",
     "test": "node --test",
     "accuracy": "node tools/accuracy.mjs",
-    "render": "node tools/render.mjs"
+    "render": "node tools/render.mjs",
+    "assets": "node tools/assets.mjs",
+    "blockout": "node tools/make-blockout.mjs"
   },
   "engines": {
     "node": ">=20.19"
@@ -21,6 +23,10 @@
     "three": "0.186.1"
   },
   "devDependencies": {
+    "@gltf-transform/core": "4.5.1",
+    "@gltf-transform/extensions": "4.5.1",
+    "@gltf-transform/functions": "4.5.1",
+    "meshoptimizer": "1.3.0",
     "vite": "8.3.4"
   }
 }

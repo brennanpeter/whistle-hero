@@ -1,0 +1,18 @@
+{
+  "name": "The pub (blockout)",
+  "environment": "blockout-env.glb",
+  "scale": 2,
+  "background": "#1a120c",
+  "fog": { "color": "#1a120c", "near": 30, "far": 60 },
+  "toneMapping": "AgX",
+  "exposure": 1,
+  "hdri": null,
+  "lights": { "hemisphere": { "sky": "#ffd9a8", "ground": "#3a2414", "intensity": 1.6 } },
+  "runway": { "spot": "spot_runway", "opacity": 0.85 },
+  "actors": [
+    { "model": "blockout-people.glb", "node": "char_musician", "at": "spot_musician_*", "clip": "play", "onCombo": "cheer" },
+    { "model": "blockout-people.glb", "node": "char_punter", "at": "spot_crowd_*", "clip": "idle", "onCombo": "cheer" },
+    { "model": "blockout-props.glb", "node": "prop_pint", "at": "spot_pint_*" }
+  ],
+  "cheerEvery": 25
+}

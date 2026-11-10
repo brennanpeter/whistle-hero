@@ -7,6 +7,8 @@
 // View contract (shared with every view): createXView(container, chart, opts) →
 //   { update(t, live), onEvent(e), addChart(part), resize(), destroy() }
 // opts.halos = false hides the finger-move halos (setHalos(on) changes it while playing).
+// opts.stage = a scene manifest under public/assets/ ("pub/scene.json") puts the runway in a 3D place
+// (see src/stage/stage.js); `ready` resolves once it has loaded (or failed, leaving the plain view).
 // t is game time in seconds; live = { midi } for the note heard now (or null).
 import * as THREE from "three";
 import { noteInfo, FINGERINGS } from "../../whistle.js";
@@ -47,7 +49,8 @@ export function createFingerView(container, chart, opts = {}) {
 
   // road and lanes
   const roadLen = VIEW * 1.3 + 10;
-  const road = new THREE.Mesh(keep(flat(new THREE.PlaneGeometry(8.6, roadLen))), keep(new THREE.MeshBasicMaterial({ color: COLORS.road })));
+  const roadMat = keep(new THREE.MeshBasicMaterial({ color: COLORS.road }));
+  const road = new THREE.Mesh(keep(flat(new THREE.PlaneGeometry(8.6, roadLen))), roadMat);
   road.position.set(0, -0.02, -roadLen / 2 + 3);
   scene.add(road);
   for (const x of HOLE_X) {
@@ -59,6 +62,7 @@ export function createFingerView(container, chart, opts = {}) {
   // brings its own tempo, so dist runs piecewise through them: { t0, d0, rate (road units a second) }.
   const track = new THREE.Group(); scene.add(track);
   const segs = [];
+  const beatTimes = []; // every beat, for the stage's musicians
   const dist = t => {
     let s = segs[0];
     for (let i = 1; i < segs.length && segs[i].t0 <= t; i++) s = segs[i];
@@ -102,6 +106,7 @@ export function createFingerView(container, chart, opts = {}) {
     const mine = x => { own.push(x); return x; };
     // bar and beat lines
     const pts = [], beatPts = [];
+    for (const b of part.beats) if (!beatTimes.length || b.t > beatTimes[beatTimes.length - 1] + 1e-6) beatTimes.push(b.t);
     for (const b of part.bars) if (!b.pickup) pts.push(-4.1, 0, zOf(b.t), 4.1, 0, zOf(b.t));
     for (const b of part.beats) if (!b.strong) beatPts.push(-4.1, 0, zOf(b.t), 4.1, 0, zOf(b.t));
     const lines = (arr, color) => { const g = mine(new THREE.BufferGeometry()); g.setAttribute("position", new THREE.Float32BufferAttribute(arr, 3)); return new THREE.LineSegments(g, mine(new THREE.LineBasicMaterial({ color }))); };
@@ -201,8 +206,27 @@ export function createFingerView(container, chart, opts = {}) {
     for (const [mesh, i] of rowParts.get(id) || []) { mesh.setColorAt(i, col.set(color)); mesh.instanceColor.needsUpdate = true; }
   };
 
+  // the stage around the runway, if asked for: drawn first, with the runway over it
+  let stage = null, lastPn = 0, beatI = 0;
+  const ready = !opts.stage ? Promise.resolve(null) : import("../../stage/stage.js").then(m => m.createStage(renderer, opts.stage)).then(st => {
+    if (destroyed) { st.dispose(); return null; }
+    stage = st;
+    roadMat.transparent = st.runwayOpacity < 1; roadMat.opacity = st.runwayOpacity;
+    if (st.scene.fog) scene.fog.color.copy(st.scene.fog.color);
+    return st;
+  }).catch(e => { console.warn("stage failed to load; using the plain view", e); return null; });
+  let destroyed = false;
+  const beatAt = t => {
+    if (beatTimes.length < 2 || t < beatTimes[0]) return null;
+    if (beatI >= beatTimes.length || beatTimes[beatI] > t) beatI = 0;
+    while (beatI + 1 < beatTimes.length && beatTimes[beatI + 1] <= t) beatI++;
+    const a = beatTimes[beatI], b = beatTimes[beatI + 1] ?? a + (a - beatTimes[beatI - 1]);
+    return { n: beatI, phase: Math.min(1, (t - a) / (b - a)), len: b - a };
+  };
+
   let now = 0, raf = 0;
   function onEvent(e) {
+    stage?.onEvent(e);
     if (e.type === "hit") {
       recolor(e.note.id, COLORS.hit);
       const f = fingering(e.note.midi) || [1, 1, 1, 1, 1, 1];
@@ -230,7 +254,15 @@ export function createFingerView(container, chart, opts = {}) {
       if (k >= 1) { b.t0 = -1; b.m.material.opacity = 0; continue; }
       b.m.scale.setScalar(1 + k * 1.6); b.m.material.opacity = 0.85 * (1 - k);
     }
-    renderer.render(scene, camera);
+    if (stage) {
+      const dt = lastPn ? Math.min(0.1, (pn - lastPn) / 1000) : 0; lastPn = pn;
+      stage.update(dt, beatAt(t));
+      renderer.autoClear = false; renderer.clear();
+      renderer.toneMapping = stage.toneMapping; renderer.toneMappingExposure = stage.exposure;
+      renderer.render(stage.scene, camera);
+      renderer.clearDepth(); renderer.toneMapping = THREE.NoToneMapping;
+      renderer.render(scene, camera);
+    } else renderer.render(scene, camera);
   }
 
   function resize() {
@@ -259,12 +291,13 @@ export function createFingerView(container, chart, opts = {}) {
   const ro = new ResizeObserver(resize); ro.observe(container);
 
   return {
-    update, onEvent, resize,
+    update, onEvent, resize, ready,
+    get stage() { return stage; },  // for tests
     addChart,                       // more of the tune (the next pass when looping)
     dist,                           // for tests: game time → distance along the road
     setHalos(on) { showHalos = !!on; for (const p of parts) p.halos.visible = showHalos; },
     destroy() {
-      cancelAnimationFrame(raf); ro.disconnect();
+      destroyed = true; cancelAnimationFrame(raf); ro.disconnect(); stage?.dispose();
       for (const d of disposables) d.dispose?.();
       for (const p of parts) { for (const m of p.meshes) m.dispose(); for (const x of p.own) x.dispose?.(); }
       renderer.dispose(); renderer.domElement.remove();

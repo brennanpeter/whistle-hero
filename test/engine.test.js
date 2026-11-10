@@ -138,3 +138,19 @@ test("simulated cuts-and-taps playing scores as well as tongued playing", () => 
   const s = replay(createGame(chart), eventsFromSession(analyze(r.samples, r.sr), r.truth.notes[0].start - chart.notes[0].t));
   assert.ok(s.accuracy >= 0.9, `accuracy ${s.accuracy.toFixed(2)} (perfect ${s.perfect}, good ${s.good})`);
 });
+
+test("a faster game clock keeps the timing windows in real time", () => {
+  // with the clock running at twice real speed, 80 ms of game time is 40 ms of real time: perfect
+  const chart = chartOf("D2 E2 F2 G2|");
+  const game = createGame(chart);
+  game.setScale(2);
+  const [a, b, c] = chart.notes;
+  const hit = game.onset(a.midi, a.t + 0.08);
+  assert.equal(hit.result, "perfect");
+  assert.ok(Math.abs(hit.offset - 0.04) < 1e-9, "offsets are reported in real seconds");
+  // 200 ms of game time early is 100 ms real: past "good" (90 ms), inside "OK" (140 ms)
+  assert.equal(game.onset(b.midi, b.t - 0.2).result, "ok");
+  // a note isn't called missed until 140 ms of real time (280 ms of game time) after it
+  game.tick(c.t + 0.25); assert.equal(game.notes[2].result, null);
+  game.tick(c.t + 0.3); assert.equal(game.notes[2].result, "miss");
+});

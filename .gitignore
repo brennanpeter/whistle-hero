@@ -34,3 +34,7 @@ Thumbs.db
 
 # Rendered test clips (npm run render)
 test-audio/
+
+# Blender backups
+*.blend1
+*.blend2

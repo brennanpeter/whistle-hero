@@ -8,6 +8,8 @@
 //   game.tick(t);          // call every frame: notes whose window has passed become misses
 //   game.state             // score, combo, counts …   game.notes / game.ornaments carry results
 //   game.on(fn)            // fn(event) for each judgment, for views and sounds
+//   game.setScale(k)       // game seconds per real second (the tempo buttons speed the game clock up
+//                          // or slow it down); the timing windows and reported offsets stay in real time
 
 export const WINDOWS = { perfect: 0.045, good: 0.09, ok: 0.14 }; // seconds either side of the note
 export const ORNAMENT_WINDOW = 0.1;
@@ -34,6 +36,10 @@ export function createGame(chart) {
   const emit = e => { for (const f of listeners) f(e); };
   let sweep = 0, osweep = 0; // first note / ornament that might still be unjudged
 
+  // the game clock can run faster or slower than real time (k game seconds a second): windows are
+  // real time, so they're stretched to match, and offsets are reported in real seconds
+  let k = 1;
+  const win = x => x * k;
   const effectiveTime = n => n.expect ?? n.t; // a cut or slide puts the main pitch a little after the beat
   const LOOKAHEAD = 0.2;
 
@@ -41,10 +47,10 @@ export function createGame(chart) {
     let best = null, nearest = null;
     for (let i = sweep; i < notes.length; i++) {
       const n = notes[i];
-      if (n.t - WINDOWS.ok > t + LOOKAHEAD) break;
+      if (n.t - win(WINDOWS.ok) > t + win(LOOKAHEAD)) break;
       if (n.result) continue;
       const dt = t - effectiveTime(n);
-      if (Math.abs(dt) > WINDOWS.ok) continue;
+      if (Math.abs(dt) > win(WINDOWS.ok)) continue;
       if (!nearest || Math.abs(dt) < Math.abs(t - effectiveTime(nearest))) nearest = n;
       if (n.midi === midi && (!best || Math.abs(dt) < Math.abs(t - effectiveTime(best)))) best = n;
     }
@@ -53,13 +59,14 @@ export function createGame(chart) {
       // An unwritten cut or tap heard just before this note started it, whether the detector
       // reported it as a grace note or (when it lasted a few frames) as a note of its own.
       for (const lead of [lastGrace, pendingWrong]) {
-        if (!lead || lead.midi === midi || t - lead.t <= 0 || t - lead.t > GRACE_LEAD) continue;
+        if (!lead || lead.midi === midi || t - lead.t <= 0 || t - lead.t > win(GRACE_LEAD)) continue;
         const dg = lead.t - effectiveTime(best);
         if (Math.abs(dg) < Math.abs(dt)) dt = dg;
       }
-      if (pendingWrong && t - pendingWrong.t <= GRACE_LEAD) pendingWrong = null; // it was the cut, not a wrong note
+      if (pendingWrong && t - pendingWrong.t <= win(GRACE_LEAD)) pendingWrong = null; // it was the cut, not a wrong note
       flushWrong();
       lastGrace = null;
+      dt /= k; // real seconds
       const g = grade(dt);
       best.result = g; best.offset = dt; best.hitT = t;
       state.counts[g]++; state.offsets.push(dt);
@@ -69,7 +76,7 @@ export function createGame(chart) {
       state.score += points; state.lastJudged = best.id;
       best.points = points; best.mult = state.multiplier; best.offsetIndex = state.offsets.length - 1;
       recentHits.push(best); if (recentHits.length > 4) recentHits.shift();
-      emit({ type: "hit", note: best, grade: g, offset: dt, points, t });
+      emit({ type: "hit", note: best, grade: g, offset: dt, points, t, combo: state.combo });
       return best;
     }
     if (nearest) {
@@ -97,8 +104,8 @@ export function createGame(chart) {
   function retime(midi, t) {
     for (const n of recentHits) {
       const lead = n.hitT - t;
-      if (n.midi === midi || lead <= 0 || lead > GRACE_LEAD) continue;
-      const dt = t - effectiveTime(n);
+      if (n.midi === midi || lead <= 0 || lead > win(GRACE_LEAD)) continue;
+      const dt = (t - effectiveTime(n)) / k;
       if (Math.abs(dt) >= Math.abs(n.offset)) continue;
       const g = grade(dt); if (!g) continue;
       state.counts[n.result]--; state.counts[g]++;
@@ -117,8 +124,8 @@ export function createGame(chart) {
     let best = null;
     for (let i = osweep; i < ornaments.length; i++) {
       const o = ornaments[i];
-      if (o.t - ORNAMENT_WINDOW > t) break;
-      if (o.result || o.midi !== midi || Math.abs(o.t - t) > ORNAMENT_WINDOW) continue;
+      if (o.t - win(ORNAMENT_WINDOW) > t) break;
+      if (o.result || o.midi !== midi || Math.abs(o.t - t) > win(ORNAMENT_WINDOW)) continue;
       if (!best || Math.abs(o.t - t) < Math.abs(best.t - t)) best = o;
     }
     if (!best) { lastGrace = { midi, t }; return retime(midi, t); }
@@ -130,8 +137,8 @@ export function createGame(chart) {
   }
 
   function tick(t) {
-    if (pendingWrong && t > pendingWrong.t + GRACE_LEAD) flushWrong();
-    while (sweep < notes.length && (notes[sweep].result || effectiveTime(notes[sweep]) + WINDOWS.ok < t)) {
+    if (pendingWrong && t > pendingWrong.t + win(GRACE_LEAD)) flushWrong();
+    while (sweep < notes.length && (notes[sweep].result || effectiveTime(notes[sweep]) + win(WINDOWS.ok) < t)) {
       const n = notes[sweep];
       if (!n.result) {
         n.result = "miss"; state.counts.miss++;
@@ -140,7 +147,7 @@ export function createGame(chart) {
       }
       sweep++;
     }
-    while (osweep < ornaments.length && (ornaments[osweep].result || ornaments[osweep].t + ORNAMENT_WINDOW < t)) {
+    while (osweep < ornaments.length && (ornaments[osweep].result || ornaments[osweep].t + win(ORNAMENT_WINDOW) < t)) {
       const o = ornaments[osweep];
       if (!o.result) { o.result = "miss"; state.ornamentsMissed++; emit({ type: "ornament-miss", ornament: o, t }); }
       osweep++;
@@ -148,7 +155,7 @@ export function createGame(chart) {
   }
 
   let duration = chart.duration;
-  const finished = t => t > duration + WINDOWS.ok;
+  const finished = t => t > duration + win(WINDOWS.ok);
 
   /** Add more of the chart while playing (the next pass of a looped tune). Times must come after
    *  everything already added; ids should continue from the existing ones (see shiftChart). */
@@ -172,7 +179,7 @@ export function createGame(chart) {
     };
   }
 
-  return { chart, notes, ornaments, state, onset, grace, tick, finished, extend, summary, on: f => listeners.push(f) };
+  return { chart, notes, ornaments, state, onset, grace, tick, finished, extend, summary, setScale: x => { k = x > 0 ? x : 1; }, on: f => listeners.push(f) };
 }
 
 /**
