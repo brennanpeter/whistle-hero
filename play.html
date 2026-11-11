@@ -854,10 +854,16 @@ function playPass(p, r, out) {
   air.gain.setValueAtTime(1, Math.max(ctx.currentTime, stopAt - 0.035));
   air.gain.linearRampToValueAtTime(0, Math.max(ctx.currentTime, stopAt - 0.03));
   src.connect(air).connect(out);
-  // where in the rendering the tune is now: its first note is the pass's first note, and from there
-  // the rendering runs at the pass's tempo (r.bpm) where the chart runs at the tempo it was laid out at
-  const now = ctx.currentTime, off = r.truth.notes[0].start + (gameTime(now) - p.first) * p.bpm / r.bpm;
-  if (off >= 0) src.start(now, off); else src.start(now - off, 0);
+  // The rendering's first note is the pass's first note, and from there it runs at the pass's tempo
+  // (r.bpm) where the chart runs at the tempo it was laid out at (p.bpm).
+  const now = ctx.currentTime, f0 = r.truth.notes[0].start, g = gameTime(now);
+  if (g >= p.first) src.start(now, f0 + (g - p.first) * p.bpm / r.bpm); // the pass is under way: join it
+  else {
+    // the pass is still to come: line its first note up with the game clock, which may be running at
+    // another speed until then (the pass before it, after a tempo change)
+    const at = audioTime(p.first) - f0;
+    if (at >= now) src.start(at, 0); else src.start(now, now - at);
+  }
   return src;
 }
 function showPassInfo() {
