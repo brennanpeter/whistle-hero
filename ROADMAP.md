@@ -19,7 +19,7 @@ What's done, and the plan for what comes next, grouped by theme in rough order. 
 
 **Tunes.** Paste or open ABC (whole files, file-header fields, credits and alternative titles); settings grouped by name; half-hole and range check with an easiest-transposition suggestion; charts with repeats and endings played out, parts and passes, pickups, a beat grid, and timed cuts, taps and rolls. The Tune Library has search, favorites, editing, a chart preview with a playhead you can scroll away from, the simulator, and backup to a file.
 
-**Game.** Engine with perfect / good / OK windows (45 / 90 / 140 ms), misses, wrong notes, combo and multiplier, scored ornaments and timing offset. Live input from the mic or the simulator, latency-compensated. Two views: the **finger-hole runway** (three.js; notes spaced by the beat, optional halos, flicks for cuts and taps) and the **sheet music view** (abcjs; one staff of played-out ABC, a ghost notehead, an optional fingering strip). Note spacing for each view; a few seconds of run-up; a one-bar count-in on the tune's own beat (pickups fall in place); a metronome (every beat or once a bar); speed 10–200%; practice loops with optional speed-up and tempo changes that take effect at once (the game clock speeds up or slows down; the band follows from the next beat, the simulator and guide are re-rendered in a background worker); pause; results with stars and personal bests.
+**Game.** Engine with perfect / good / OK windows (45 / 90 / 140 ms), misses, wrong notes, combo and multiplier, scored ornaments and timing offset. Live input from the mic or the simulator, latency-compensated. Two views: the **finger-hole runway** (three.js; notes spaced by the beat, optional halos, flicks for cuts and taps) and the **sheet music view** (abcjs; one staff of played-out ABC, a ghost notehead, an optional fingering strip). Note spacing for each view; a few seconds of run-up; a one-bar count-in on the tune's own beat (pickups fall in place); a metronome (every beat or once a bar); speed 10–200%; practice loops with optional speed-up and tempo changes that take effect at once (the game clock speeds up or slows down; the band follows from the next beat, and the simulated player and guide play live on the same clock); pause; results with stars and personal bests.
 
 **Instruments (playing alone).** C, B♭, A, G, F, E♭ and high G whistles, and the low D whistle or Irish flute: tunes are fingered as written and sound in the instrument's key, with the sounding pitch shown. The accuracy check covers the B♭ whistle and the flute.
 
@@ -95,12 +95,11 @@ What's done, and the plan for what comes next, grouped by theme in rough order. 
 - [ ] Colorblind-safe lanes and reduced motion
 - [ ] Difficulty levels: plain melody with ornaments stripped, up to expert where ornaments are required
 - [ ] Hit effects and a low-power mode
-- [x] No freeze before each loop pass ends: the next pass's guide and simulator audio used to be rendered on the main thread as it was laid out (2–3 s on a computer, longer on a phone); it's now rendered a pass ahead in a background worker
-- [ ] Faster catch-up after a tempo change: the guide and simulated player keep the old tempo until a whole pass is re-rendered (seconds on a phone). Render the next few seconds first, then the rest
-- [ ] Fiddle support: widen the detector's range down to G3, test with real fiddle recordings, and use the sheet music view
+- [x] No freeze before each loop pass ends, and no lag after a tempo change: the simulated player and the guide used to be rendered a pass at a time (seconds of work on a phone, re-done after every tempo change); they're now synthesized live (below)
 
 ### 10. Simulator
 
-- [ ] Real-time mode that feeds Whistle Sim into the live microphone path, to test the AudioWorklet path and latency without speakers
+- [x] The simulated whistle as a streaming voice (`src/sim/voice.js`): offline renders (Whistle Sim, tests) and the game share it, bit for bit the sound it made before. In the game an audio worklet (`src/sim/sim-worklet.js`) plays it live on the game clock (`src/game/clock.js`), so tempo changes are followed at once; one voice costs about 2% of a computer's core
+- [ ] Feed Whistle Sim's own page through the live microphone path too, to test the detector's real-time path and latency without speakers
 - [ ] Render straight from game charts, so every tune gets an automatic playthrough test
 - [ ] A small set of real whistle clips with hand-labeled notes, to check that the synth's mistakes look like real ones

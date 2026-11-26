@@ -294,11 +294,13 @@ window.__gameLoaded = false;
 import { parseAbc } from "./src/abc/abc.js";
 import { buildChart, swingFor, shiftChart } from "./src/chart/chart.js";
 import { createGame } from "./src/game/engine.js";
+import { bpmWith, gameTime as clockGameTime, audioTime as clockAudioTime, rateAt as clockRateAt, clockData } from "./src/game/clock.js";
 import { createListener } from "./src/audio/live.js";
 import { grooveFor, beatStrokes, GROOVES } from "./src/audio/grooves.js";
 import { annotateBeats, createBodhran } from "./src/audio/band.js";
 import { DEFAULT_SETTINGS } from "./src/audio/detector.js";
-import { renderAbc, PRESETS, PROFILES } from "./src/sim/whistle-synth.js";
+import { performAbc, PRESETS, PROFILES } from "./src/sim/whistle-synth.js";
+import simWorkletUrl from "./src/sim/sim-worklet.js?worker&url";
 import { noteInfo } from "./src/whistle.js";
 import { loadLibrary, saveLibrary, starterTunes, groupTunes } from "./src/library.js";
 import { loadCalibration, calibratedSettings, tuningFor } from "./src/calibration.js";
@@ -486,11 +488,8 @@ function showGuide() {
 function setGuide(v) {
   prefs.guide = v; savePrefs(); showGuide();
   if (!S) return;
-  if (v === "off") stopGuide();
-  else if (isFinite(S.t0)) {
-    for (const p of S.passes) playWhenReady("guide", p); // the passes still to come, from where they've got to
-    renderAhead(S.passes[S.passes.length - 1].n + 1);
-  }
+  if (v === "off") stopPart("guide");
+  else if (isFinite(S.t0)) startPart("guide"); // it joins wherever the tune has got to
 }
 for (const id of ["#guideVol", "#guideVolP"]) $(id).addEventListener("input", e => { prefs.guideVol = +e.target.value; savePrefs(); showGuide(); });
 document.querySelectorAll("[data-guide]").forEach(b => b.addEventListener("click", () => setGuide(b.dataset.guide)));
@@ -584,16 +583,14 @@ async function start() {
   const stage = $("#stage"); stage.innerHTML = "";
   const view = createView(stage, chart, { parsed, halos: aidOn(), spacing: (prefs.mode === "sheet" ? prefs.spacingSheet : prefs.spacingFingers) / 100,
     stage: prefs.mode === "fingers" && prefs.scene !== "plain" ? prefs.scene : null });
-  // The simulator's audio for the first pass takes a moment to render, so do it before the clock starts.
-  const sim0 = prefs.input === "sim" ? renderSim(tune, bpm0) : null;
-  const guide0 = prefs.guide === "on" ? renderGuide(tune, bpm0) : null;
-  S = { ctx, game, view, ear, t0: Infinity, comp, outLat, tune, chart, parsed, sims: [], frame: null, ended: false, raf: 0,
+  try { await loadSimWorklet(ctx); } catch (e) { console.warn("the simulated whistle couldn't load", e); }
+  S = { ctx, game, view, ear, t0: Infinity, comp, outLat, tune, chart, parsed, parts: {}, frame: null, ended: false, raf: 0,
         beats: annotateBeats(chart.beats), beatI: 0, bandSrc: [], bandRedo: false,
         groove: grooveFor(parsed), until: lastNoteT(chart),
         countIn, countBeat: beat, countSub: sub, countDown: down, loop: prefs.loop, passes: [{ start: 0, end: chart.end, bpm: bpm0, n: 1, first: chart.notes[0]?.t ?? 0 }], baseBpm: bpm0, pass: 0, topBpm: 0, countSrc: [] };
   S.bandOut = ctx.createGain(); S.bandOut.gain.value = bandGain(); S.bandOut.connect(ctx.destination);
   S.bodhran = createBodhran(ctx, S.bandOut);
-  S.guideOut = ctx.createGain(); S.guideOut.gain.value = prefs.guideVol / 100; S.guideOut.connect(ctx.destination); S.guides = [];
+  S.guideOut = ctx.createGain(); S.guideOut.gain.value = prefs.guideVol / 100; S.guideOut.connect(ctx.destination);
   const session = S;
   if (location.hash === "#debug") { window.__game = S; window.__clock = { gameTime, audioTime, rateAt }; } // for tests and troubleshooting
 
@@ -630,11 +627,8 @@ async function start() {
   S.t0 = ctx.currentTime + runUp;
   S.warp = [{ a: S.t0, g: 0, base: S.baseBpm }];
   scheduleCountIn();
-  if (sim0) startSim(S.passes[0], sim0);
-  if (guide0) startGuide(S.passes[0], guide0);
-  // pass 2's audio, a few seconds in (so it doesn't compete with a re-render if the tempo's changed early on)
-  setTimeout(() => { if (S === session && !S.resyncTimer) renderAhead(2); }, 5000);
-  if (bpmFor(1) !== S.passes[0].bpm) resyncPlayers(); // the tempo was changed while getting ready
+  if (prefs.input === "sim") startPart("sim");
+  if (prefs.guide === "on") startPart("guide");
   if (otherMic) setTimeout(() => flash("Different microphone", "var(--brass)", "Calibrated with another mic. Recalibrate for best timing."), 300);
   loop();
 }
@@ -651,42 +645,12 @@ function scheduleCountIn() {
   }
 }
 
-/* ---------- the game clock ----------
-   Game time is chart time: the notes, beats, views and judging all work in it. It normally runs with
-   the audio clock (game = audio − t0), but the tempo buttons change how fast it runs, so a change is
-   heard and seen at once: everything already laid out keeps its place and the clock runs through it
-   faster or slower. Each pass runs at bpmFor(its number) ÷ the tempo it was laid out at. Each change
-   leaves an anchor { a: audio time, g: game time, base: the base tempo from then on }, so times from
-   before it (the detector reports a moment late) still convert as they were. */
-const bpmWith = (base, n) => Math.max(5, base + (S.loop === "ramp" ? 5 * Math.floor((n - 1) / 3) : 0));
-const bpmFor = n => bpmWith(S.baseBpm, n);
-function passAt(g, s = S) { let p = s.passes[0]; for (const q of s.passes) { if (q.start <= g + 1e-9) p = q; else break; } return p; }
-const nextStart = (g, s = S) => { for (const q of s.passes) if (q.start > g + 1e-9) return q.start; return Infinity; };
-const rateAt = (g, base, s = S) => { const p = passAt(g, s); return Math.max(5, base + (s.loop === "ramp" ? 5 * Math.floor((p.n - 1) / 3) : 0)) / p.bpm; };
-/** Audio clock time → game time. */
-function gameTime(a, s = S) {
-  const W = s.warp; let k = 0;
-  while (k + 1 < W.length && W[k + 1].a <= a) k++;
-  let { a: a0, g, base } = W[k];
-  if (a < a0) return g + (a - a0) * rateAt(g, base, s); // before the first anchor: the run-up
-  for (;;) {
-    const r = rateAt(g, base, s), nb = nextStart(g, s), aEnd = a0 + (nb - g) / r;
-    if (a <= aEnd) return g + (a - a0) * r;
-    a0 = aEnd; g = nb;
-  }
-}
-/** Game time → audio clock time. */
-function audioTime(gt, s = S) {
-  const W = s.warp; let k = 0;
-  while (k + 1 < W.length && W[k + 1].g <= gt) k++;
-  let { a, g, base } = W[k];
-  if (gt < g) return a + (gt - g) / rateAt(g, base, s);
-  for (;;) {
-    const r = rateAt(g, base, s), nb = nextStart(g, s);
-    if (gt <= nb) return a + (gt - g) / r;
-    a += (nb - g) / r; g = nb;
-  }
-}
+// The game clock (src/game/clock.js): game time is chart time, and the tempo buttons change how fast
+// it runs against the audio clock. These read the current session's clock.
+const bpmFor = n => bpmWith(S.baseBpm, n, S.loop);
+const gameTime = (a, s = S) => clockGameTime(a, s);
+const audioTime = (g, s = S) => clockAudioTime(g, s);
+const rateAt = (g, base, s = S) => clockRateAt(g, base, s);
 
 // a short woodblock-like click: noise, no clear pitch, so the detector ignores it
 function click(ctx, at, strong, vol = prefs.clickVol / 60) {
@@ -734,7 +698,7 @@ const lastNoteT = chart => chart.notes.length ? chart.notes[chart.notes.length -
 // Tempo for pass n (bpmFor, with the game clock above): the base tempo (which − / + change), plus
 // 5 bpm every third pass when speeding up.
 function appendPass() {
-  scheduleBand(2.5); // laying out a pass (and rendering the simulator's audio) can stall the page
+  scheduleBand(2.5); // laying out a pass takes a moment
   const last = S.passes[S.passes.length - 1], n = last.n + 1, bpm = bpmFor(n);
   const part = shiftChart(buildChart(S.parsed, { bpm }), last.end,
     { firstNote: S.game.notes.length, firstOrnament: S.game.ornaments.length, loop: n });
@@ -745,127 +709,53 @@ function appendPass() {
   S.beats.push(...annotateBeats(part.beats, { fromBar: prev ? prev.bar + 1 : 0 }));
   S.until = lastNoteT(part);
   const p = { start: last.end, end: part.end, bpm, n, first: part.notes[0]?.t ?? last.end }; S.passes.push(p);
-  if (prefs.input === "sim") playWhenReady("sim", p);
-  if (prefs.guide === "on") playWhenReady("guide", p);
-  renderAhead(n + 1);
+  for (const kind in S.parts) S.parts[kind].node.port.postMessage({ clock: clockData(S), pass: performPass(kind, p) });
   showPassInfo();
 }
-// Audio for passes to come (the simulated player's and the guide's) is rendered a pass ahead, in the
-// background: rendering a pass takes about a second on a computer and several on a phone, and doing it
-// here froze the game a few seconds before each pass ended.
-function passAudio(kind, n, lane = "now") {
-  const bpm = bpmFor(n), key = `${kind} ${n} ${bpm}`;
-  if (!S.ahead) S.ahead = new Map();
-  if (!S.ahead.has(key)) S.ahead.set(key, renderLater(S.tune.abc, kind === "sim" ? simOpts(S.tune, bpm) : guideOpts(S.tune, bpm), lane));
-  return S.ahead.get(key);
-}
-function renderAhead(n) {
-  if (!S || S.loop === "off") return;
-  for (const k of [...(S.ahead || new Map()).keys()]) if (+k.split(" ")[1] < n - 1) S.ahead.delete(k); // done with
-  if (prefs.input === "sim") passAudio("sim", n, "ahead");
-  if (prefs.guide === "on") passAudio("guide", n, "ahead");
-}
-// Play a pass's audio once it's rendered (from partway in, if it's late). If the tempo changed while
-// it was rendering, it's rendered again at the new one.
-function playWhenReady(kind, p) {
-  const session = S;
-  passAudio(kind, p.n).then(r => {
-    if (S !== session || audioTime(p.end) <= S.ctx.currentTime) return;
-    if (r.bpm !== bpmFor(p.n)) return playWhenReady(kind, p);
-    if (kind === "sim") startSim(p, r); else if (prefs.guide === "on") startGuide(p, r);
-  });
-}
-// the simulated player plays each pass from its own rendering, lined up on the game clock
+/* ---------- the simulated player and the guide ----------
+   Both are the simulated whistle, played live by an audio worklet (src/sim/sim-worklet.js) on the game
+   clock. Each pass's performance (its notes, ornaments and human timing: perform() in
+   whistle-synth.js) is worked out as the pass is laid out, at the tempo it's laid out at, and the
+   worklet plays it at whatever speed the clock runs, so a tempo change is followed the moment it
+   happens. One node plays each part for the whole session. */
 const simOpts = (tune, bpm) => ({ profile: prefs.profile, articulation: prefs.simArtic, bpm, transpose: tune.transpose || 0, shift: shiftOf(inst), rhythm: tune.rhythm, seed: 1 + Math.floor(Math.random() * 9999) });
-const renderSim = (tune, bpm) => ({ ...renderAbc(tune.abc, simOpts(tune, bpm)), bpm });
-// the guide: the same synth, played cleanly with the written ornaments
+// the guide: the same whistle, played cleanly with the written ornaments
 const guideOpts = (tune, bpm) => ({ profile: "clean", articulation: "abc", bpm, transpose: tune.transpose || 0, shift: shiftOf(inst), rhythm: tune.rhythm, seed: 7 });
-const renderGuide = (tune, bpm) => ({ ...renderAbc(tune.abc, guideOpts(tune, bpm)), bpm });
-// the same, in background workers (so the game doesn't stall), or here if workers aren't available.
-// Two lanes, each its own worker: "now" for audio needed at once (after a tempo change), "ahead" for
-// the next pass, so an urgent render never waits behind one that isn't.
-const renderWorkers = {}, renderJobs = new Map();
-let renderId = 0;
-function renderLater(abc, opts, lane = "now") {
+const loadedWorklet = new WeakMap();
+function loadSimWorklet(ctx) {
+  if (!loadedWorklet.has(ctx)) loadedWorklet.set(ctx, ctx.audioWorklet.addModule(simWorkletUrl));
+  return loadedWorklet.get(ctx);
+}
+// a pass's performance, in the form the worklet takes: its first note lines up with the pass's
+function performPass(kind, p, perf = performAbc(S.tune.abc, (kind === "sim" ? simOpts : guideOpts)(S.tune, p.bpm))) {
+  return { first: p.first, f0: perf.items.length ? perf.items[0].start : 0, items: perf.items };
+}
+function startPart(kind) {
+  if (!S || S.parts[kind] || !isFinite(S.t0)) return;
+  const { ctx } = S, now = gameTime(ctx.currentTime);
+  const perf = performAbc(S.tune.abc, (kind === "sim" ? simOpts : guideOpts)(S.tune, S.passes[0].bpm));
+  let node;
   try {
-    let w = renderWorkers[lane];
-    if (!w) {
-      w = renderWorkers[lane] = new Worker(new URL("./src/sim/render-worker.js", import.meta.url), { type: "module" });
-      w.onmessage = e => { const j = renderJobs.get(e.data.id); renderJobs.delete(e.data.id); if (j) e.data.error ? j.no(new Error(e.data.error)) : j.ok(e.data.r); };
-      w.onerror = e => { for (const [id, j] of renderJobs) if (j.lane === lane) { j.no(e); renderJobs.delete(id); } delete renderWorkers[lane]; };
-    }
-    const id = ++renderId;
-    return new Promise((ok, no) => { renderJobs.set(id, { ok, no, lane }); w.postMessage({ id, abc, opts }); })
-      .then(r => ({ ...r, bpm: opts.bpm }))
-      .catch(() => ({ ...renderAbc(abc, opts), bpm: opts.bpm }));
-  } catch (e) { return Promise.resolve({ ...renderAbc(abc, opts), bpm: opts.bpm }); }
+    node = new AudioWorkletNode(ctx, "whistle-sim", { numberOfInputs: 0, outputChannelCount: [1],
+      processorOptions: { options: perf.options, firstMidi: perf.items.length ? perf.items[0].midi : 62, clock: clockData(S) } });
+  } catch (e) { console.warn("no simulated whistle", e); return; }
+  // every pass laid out that isn't over yet
+  S.passes.forEach((p, i) => { if (p.end > now) node.port.postMessage({ pass: performPass(kind, p, i === 0 ? perf : undefined) }); });
+  let out;
+  if (kind === "sim") { // into the detector, as the microphone would be (and the speakers, to listen in)
+    out = ctx.createGain(); node.connect(out); S.ear.input(out);
+    if (prefs.monitor) { const g = ctx.createGain(); g.gain.value = 0.8; out.connect(g).connect(ctx.destination); }
+  } else { out = S.guideOut; node.connect(out); }
+  S.parts[kind] = { node, out };
 }
-function startGuide(p, r) {
-  if (!S || prefs.guide !== "on" || S.guides.some(g => g.p === p) || audioTime(p.end) <= S.ctx.currentTime) return;
-  const src = playPass(p, r, S.guideOut);
-  S.guides.push({ src, p });
+function stopPart(kind) {
+  const part = S && S.parts[kind];
+  if (!part) return;
+  part.node.port.postMessage({ stop: true }); part.node.disconnect();
+  delete S.parts[kind];
 }
-function stopGuide() {
-  if (!S) return;
-  for (const g of S.guides) try { g.src.stop(); } catch (e) {}
-  S.guides = [];
-}
-function startSim(p, r) {
-  const air = S.ctx.createGain();
-  S.ear.input(air);
-  if (prefs.monitor) { const g = S.ctx.createGain(); g.gain.value = 0.8; air.connect(g).connect(S.ctx.destination); }
-  S.sims.push({ src: playPass(p, r, air), air, p });
-}
-// After a tempo change, the simulated player and the guide are rendered again at the new tempo (in the
-// background) and picked up from where they've got to. Until then the old rendering plays on; a
-// newer change supersedes the renders of an older one.
-function resyncPlayers() {
-  if (S) S.resyncTimer = 0;
-  if (!S || !isFinite(S.t0)) return;
-  const session = S, gen = S.resyncGen = (S.resyncGen || 0) + 1;
-  const live = x => audioTime(x.p.end) > S.ctx.currentTime;
-  const jobs = [
-    ...S.sims.filter(live).map(x => renderLater(S.tune.abc, simOpts(S.tune, bpmFor(x.p.n))).then(r => ({ x, r, sim: true }))),
-    ...(prefs.guide === "on" ? S.guides.filter(live).map(x => renderLater(S.tune.abc, guideOpts(S.tune, bpmFor(x.p.n))).then(r => ({ x, r }))) : []),
-  ];
-  Promise.all(jobs).then(done => {
-    if (S !== session || gen !== S.resyncGen) return;
-    renderAhead(S.passes[S.passes.length - 1].n + 1); // then the next pass, at the new tempo
-    for (const { x, r, sim } of done) {
-      if (!live(x)) continue;
-      const old = x.src;
-      if (sim) { S.sims = S.sims.filter(y => y !== x); startSim(x.p, r); setTimeout(() => x.air.disconnect(), 100); }
-      else if (S.guides.includes(x)) x.src = playPass(x.p, r, S.guideOut);
-      else continue;
-      try { old.stop(); } catch (e) {}
-    }
-  });
-}
-// Play one rendered pass into `out`, lined up on the game clock (from partway in, if it's already begun).
-// It was rendered at the pass's current tempo (r.bpm), so it runs exactly as fast as the clock does
-// through that pass: its first note lines up with the pass's first note, and the rest follows.
-function playPass(p, r, out) {
-  const ctx = S.ctx, buf = ctx.createBuffer(1, r.samples.length, r.sr); buf.copyToChannel(r.samples, 0);
-  const src = ctx.createBufferSource(); src.buffer = buf;
-  // Each pass is rendered on its own, so the simulated player stops the air for 30 ms where one pass
-  // meets the next, as a player tongues there. Otherwise a tune ending and starting on the same note
-  // would run the two together.
-  const air = ctx.createGain(), stopAt = audioTime(p.end);
-  air.gain.setValueAtTime(1, Math.max(ctx.currentTime, stopAt - 0.035));
-  air.gain.linearRampToValueAtTime(0, Math.max(ctx.currentTime, stopAt - 0.03));
-  src.connect(air).connect(out);
-  // The rendering's first note is the pass's first note, and from there it runs at the pass's tempo
-  // (r.bpm) where the chart runs at the tempo it was laid out at (p.bpm).
-  const now = ctx.currentTime, f0 = r.truth.notes[0].start, g = gameTime(now);
-  if (g >= p.first) src.start(now, f0 + (g - p.first) * p.bpm / r.bpm); // the pass is under way: join it
-  else {
-    // the pass is still to come: line its first note up with the game clock, which may be running at
-    // another speed until then (the pass before it, after a tempo change)
-    const at = audioTime(p.first) - f0;
-    if (at >= now) src.start(at, 0); else src.start(now, now - at);
-  }
-  return src;
-}
+// the clock changed (a tempo change): the worklet follows it from now
+const sendClock = () => { for (const kind in S.parts) S.parts[kind].node.port.postMessage({ clock: clockData(S) }); };
 function showPassInfo() {
   if (!S) return;
   const cur = S.passes[S.pass] || S.passes[0];
@@ -891,7 +781,7 @@ function nudgeTempo(d) {
     S.warp.push({ a, g, base });
     S.bandRedo = true;
     if (g < S.countDown) scheduleCountIn();
-    clearTimeout(S.resyncTimer); S.resyncTimer = setTimeout(resyncPlayers, 250);
+    sendClock();
   } else S.baseBpm = base; // still getting ready: the clock starts at the new tempo
   showPassInfo();
   flash(d > 0 ? "Faster" : "Slower", "var(--brass)", `${bpmFor((S.passes[S.pass] || S.passes[0]).n)} bpm`);
@@ -970,10 +860,8 @@ function loop() {
 function stopSession() {
   if (!S) return;
   cancelAnimationFrame(S.raf);
-  clearTimeout(S.resyncTimer);
   for (const c of S.countSrc) try { c.src.stop(); } catch (e) {}
-  for (const x of S.sims) { try { x.src.stop(); } catch (e) {} }
-  stopGuide();
+  for (const kind in S.parts) stopPart(kind);
   S.ear.stop(); S.ctx.close(); S.view.destroy();
   for (const id of ["#hud", "#heard", "#pauseBtn", "#progress", "#count", "#tempoCtl"]) $(id).hidden = true;
   $("#judge").classList.remove("show");

@@ -70,6 +70,7 @@ src/abc/playability.js  half-hole and range check, transposition suggestions
 src/abc/write.js        write a parsed tune back out as ABC, played out, for the staff view
 src/chart/chart.js      game charts: timed notes, cuts and taps, bars and beats
 src/game/engine.js      judging and scoring (no DOM, tested in Node)
+src/game/clock.js       the game clock: game time against the audio clock, with tempo changes
 src/game/views/         ways of drawing the game: finger-view.js (three.js), sheet-view.js (abcjs)
 src/audio/live.js       real-time detection from the mic or the simulator
 src/audio/bodhran.js    the synthesized bodhrán
@@ -83,7 +84,9 @@ assets-src/             Blender sources, plain glTF exports and scene manifests 
 public/assets/          the optimized assets the game loads, made by npm run assets
 src/calibration.js      calibration maths (gate, tuning, latency) and storage
 src/sim/whistle-synth.js
-                        synthetic whistle and player model
+                        synthetic whistle and player model: ABC to a performance (and to audio)
+src/sim/voice.js        the simulated whistle as a streaming voice, one sample at a time
+src/sim/sim-worklet.js  the voice live in an audio worklet, on the game clock (the game's simulated player and guide)
 tools/                  dev server, WAV renderer, accuracy report, asset pipeline, blockout generator
 test/                   node:test suites and the accuracy baseline
 ```
