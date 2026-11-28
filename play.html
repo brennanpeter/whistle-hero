@@ -86,6 +86,7 @@ input[type=number]{font:14px var(--f-mono);color:var(--ink);background:var(--bg)
 .stars .off{color:var(--line)}
 .note{font-size:14px;background:var(--bg);border-radius:8px;padding:10px 12px}
 a{color:var(--brass)}
+#setupMsg .inlineBtn{display:block;margin-top:10px}
 @media (max-width:520px){.hud .score{font-size:30px}.judge{font-size:34px}.card h1{font-size:38px}.heard{top:auto;bottom:max(64px,calc(env(safe-area-inset-bottom) + 50px));left:16px;transform:none}.hud .tune{max-width:45vw;font-size:18px}}
 </style>
 <script type="module" src="./src/nav.js"></script>
@@ -363,6 +364,29 @@ const VIEWS = {
   fingers: () => import("./src/game/views/finger-view.js").then(m => m.createFingerView),
   sheet: () => import("./src/game/views/sheet-view.js").then(m => m.createSheetView),
 };
+const msg = s => { $("#setupMsg").textContent = s; };
+
+// The finger-hole view draws with WebGL. A browser can have it switched off: no usable graphics
+// driver, graphics acceleration turned off, or (in Chrome) the GPU shut off after it crashed. Then
+// say so, and offer the sheet music view, which doesn't need it.
+let webgl = null;
+function webglWorks() {
+  if (webgl === null) try {
+    const c = document.createElement("canvas"), gl = c.getContext("webgl2") || c.getContext("webgl");
+    webgl = !!gl;
+    if (gl) gl.getExtension("WEBGL_lose_context")?.loseContext(); // only a test: give the context back
+  } catch (e) { webgl = false; }
+  return webgl;
+}
+const NO_WEBGL = "This browser has 3D graphics (WebGL) switched off, so the finger-hole view can't be drawn. Restarting the browser often brings it back (in Chrome, chrome://gpu says why it's off). The sheet music view works without it.";
+function offerSheet(text = NO_WEBGL) {
+  msg(text);
+  const b = document.createElement("button");
+  b.type = "button"; b.className = "inlineBtn"; b.textContent = "Use the sheet music view";
+  b.addEventListener("click", () => { prefs.mode = "sheet"; savePrefs(); showMode(); msg(""); });
+  $("#setupMsg").append(" ", b);
+}
+
 const viewFailed = e => "The game couldn't load this view" + (/module|import|fetch/i.test(e.message || "")
   ? ". Stop any running server, then run: npm install, then npm run dev, and reload this page." : ": " + (e.message || "unknown error"));
 const AID = { fingers: ["Halos on fingers that move", "Halos on", "Halos off"],
@@ -374,6 +398,8 @@ function showMode() {
   $("#halos").checked = aidOn();
   $("#sceneField").hidden = prefs.mode !== "fingers";
   VIEWS[prefs.mode]().catch(e => msg(viewFailed(e))); // start loading it now
+  if (prefs.mode === "fingers" && !webglWorks()) offerSheet();
+  else if ($("#setupMsg").textContent.startsWith(NO_WEBGL.slice(0, 30))) msg("");
 }
 showMode();
 $("#scene").value = prefs.scene; if (!$("#scene").value) { prefs.scene = "plain"; $("#scene").value = "plain"; }
@@ -536,12 +562,12 @@ showInput();
 document.querySelectorAll("[data-input]").forEach(b => b.addEventListener("click", () => { prefs.input = b.dataset.input; savePrefs(); showInput(); showGuide(); }));
 
 /* ---------- a game session ---------- */
-const msg = s => { $("#setupMsg").textContent = s; };
 
 async function start() {
   lib = loadLibrary(); // the Tune Library may have changed in another tab
   const tune = lib.tunes.find(t => t.id === prefs.tune);
   if (!tune) return;
+  if (prefs.mode === "fingers" && !webglWorks()) { offerSheet(); return; }
   msg("Getting ready…");
   let createView;
   try { createView = await VIEWS[prefs.mode](); } catch (e) { msg(viewFailed(e)); return; }
@@ -581,8 +607,15 @@ async function start() {
   const otherMic = prefs.input === "mic" && cal && cal.mic && micLabel && cal.mic !== micLabel;
   const game = createGame(chart);
   const stage = $("#stage"); stage.innerHTML = "";
-  const view = createView(stage, chart, { parsed, halos: aidOn(), spacing: (prefs.mode === "sheet" ? prefs.spacingSheet : prefs.spacingFingers) / 100,
-    stage: prefs.mode === "fingers" && prefs.scene !== "plain" ? prefs.scene : null });
+  let view;
+  try {
+    view = createView(stage, chart, { parsed, halos: aidOn(), spacing: (prefs.mode === "sheet" ? prefs.spacingSheet : prefs.spacingFingers) / 100,
+      stage: prefs.mode === "fingers" && prefs.scene !== "plain" ? prefs.scene : null });
+  } catch (e) { // let go of the microphone and audio, and say what happened
+    console.error(e); ear.stop(); ctx.close(); stage.innerHTML = "";
+    if (prefs.mode === "fingers" && /WebGL/i.test(e.message || "")) { webgl = false; offerSheet(); } else msg(viewFailed(e));
+    return;
+  }
   try { await loadSimWorklet(ctx); } catch (e) { console.warn("the simulated whistle couldn't load", e); }
   S = { ctx, game, view, ear, t0: Infinity, comp, outLat, tune, chart, parsed, parts: {}, frame: null, ended: false, raf: 0,
         beats: annotateBeats(chart.beats), beatI: 0, bandSrc: [], bandRedo: false,
